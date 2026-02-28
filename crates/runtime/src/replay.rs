@@ -35,11 +35,28 @@ impl<W: Write> ReplayCsvWriter<W> {
 
     pub fn append_paper_journal_rows(&mut self, rows: &[PaperJournalRow]) -> io::Result<()> {
         for row in rows {
-            let action = row.kind.as_replay_action();
+            let action = if row.action_detail.is_empty() {
+                row.kind.as_replay_action().to_string()
+            } else {
+                format!("{}:{}", row.kind.as_replay_action(), row.action_detail)
+            };
+            let action = escape_csv_field(&action);
             writeln!(self.writer, "{},,,,{action},,,,", row.tick)?;
         }
         Ok(())
     }
+}
+
+fn escape_csv_field(value: &str) -> String {
+    let needs_quotes = value
+        .chars()
+        .any(|ch| matches!(ch, ',' | '"' | '\n' | '\r'));
+    if !needs_quotes {
+        return value.to_string();
+    }
+
+    let escaped = value.replace('"', "\"\"");
+    format!("\"{escaped}\"")
 }
 
 #[cfg(test)]
@@ -161,6 +178,26 @@ mod tests {
     #[test]
     fn replay_writer_appends_paper_fill_rows() {
         let csv = write_csv_for_test(vec![sample_paper_fill_row()]).unwrap();
-        assert!(csv.contains("paper_fill"));
+        assert_eq!(
+            csv,
+            format!(
+                "{REPLAY_CSV_HEADER}17,,,,paper_fill:buy:market-1@0.62x5,,,,\n"
+            )
+        );
+    }
+
+    #[test]
+    fn replay_writer_escapes_action_field_with_csv_rules() {
+        let mut row = sample_paper_fill_row();
+        row.action_detail = "buy,\"market-1\"\nleg2".to_string();
+
+        let csv = write_csv_for_test(vec![row]).unwrap();
+
+        assert_eq!(
+            csv,
+            format!(
+                "{REPLAY_CSV_HEADER}17,,,,\"paper_fill:buy,\"\"market-1\"\"\nleg2\",,,,\n"
+            )
+        );
     }
 }
