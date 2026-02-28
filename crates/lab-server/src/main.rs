@@ -10,9 +10,14 @@ use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let config = config::Config::from_env()?;
-    initialize_replay_output(&config.replay_output_path)?;
-    let listener = TcpListener::bind(config.listen_addr).await?;
+    let config::Config {
+        listen_addr,
+        mode: _mode,
+        replay_output_path,
+    } = config::Config::from_env()?;
+
+    initialize_replay_output(&replay_output_path)?;
+    let listener = TcpListener::bind(listen_addr).await?;
 
     axum::serve(listener, wiring::build_app()).await?;
     Ok(())

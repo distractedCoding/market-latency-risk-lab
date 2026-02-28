@@ -4,19 +4,39 @@ use std::{
 };
 
 const DEFAULT_LISTEN_ADDR: &str = "0.0.0.0:8080";
+const DEFAULT_MODE: RunMode = RunMode::PaperLive;
 const DEFAULT_REPLAY_OUTPUT_PATH: &str = "artifacts/replay.csv";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunMode {
+    PaperLive,
+    Sim,
+}
+
+impl RunMode {
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "paper-live" => Some(Self::PaperLive),
+            "sim" => Some(Self::Sim),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
     pub listen_addr: SocketAddr,
+    pub mode: RunMode,
     pub replay_output_path: String,
 }
 
 #[derive(Debug)]
 pub enum ConfigError {
     InvalidListenAddr(AddrParseError),
+    InvalidMode,
     InvalidReplayOutputPath,
     NonUnicodeListenAddr,
+    NonUnicodeMode,
     NonUnicodeReplayOutput,
 }
 
@@ -26,6 +46,9 @@ impl fmt::Display for ConfigError {
             Self::InvalidListenAddr(err) => {
                 write!(f, "LAB_SERVER_ADDR is not a valid socket address: {err}")
             }
+            Self::InvalidMode => {
+                write!(f, "LAB_SERVER_MODE must be one of: paper-live, sim")
+            }
             Self::InvalidReplayOutputPath => {
                 write!(
                     f,
@@ -34,6 +57,9 @@ impl fmt::Display for ConfigError {
             }
             Self::NonUnicodeListenAddr => {
                 write!(f, "LAB_SERVER_ADDR contains non-unicode data")
+            }
+            Self::NonUnicodeMode => {
+                write!(f, "LAB_SERVER_MODE contains non-unicode data")
             }
             Self::NonUnicodeReplayOutput => {
                 write!(f, "LAB_SERVER_REPLAY_OUTPUT contains non-unicode data")
@@ -46,8 +72,10 @@ impl std::error::Error for ConfigError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::InvalidListenAddr(err) => Some(err),
+            Self::InvalidMode => None,
             Self::InvalidReplayOutputPath => None,
             Self::NonUnicodeListenAddr => None,
+            Self::NonUnicodeMode => None,
             Self::NonUnicodeReplayOutput => None,
         }
     }
@@ -62,6 +90,14 @@ impl Config {
                 .expect("default listen address must be valid"),
             Err(env::VarError::NotUnicode(_)) => {
                 return Err(ConfigError::NonUnicodeListenAddr);
+            }
+        };
+
+        let mode = match env::var("LAB_SERVER_MODE") {
+            Ok(value) => RunMode::parse(value.as_str()).ok_or(ConfigError::InvalidMode)?,
+            Err(env::VarError::NotPresent) => DEFAULT_MODE,
+            Err(env::VarError::NotUnicode(_)) => {
+                return Err(ConfigError::NonUnicodeMode);
             }
         };
 
@@ -80,6 +116,7 @@ impl Config {
 
         Ok(Self {
             listen_addr,
+            mode,
             replay_output_path,
         })
     }
@@ -89,10 +126,11 @@ impl Config {
 mod tests {
     use std::{env, sync::Mutex};
 
-    use super::{Config, ConfigError};
+    use super::{Config, ConfigError, RunMode};
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
     const ENV_ADDR_KEY: &str = "LAB_SERVER_ADDR";
+    const ENV_MODE_KEY: &str = "LAB_SERVER_MODE";
     const ENV_REPLAY_KEY: &str = "LAB_SERVER_REPLAY_OUTPUT";
 
     struct EnvVarGuard {
@@ -158,6 +196,52 @@ mod tests {
         let err = Config::from_env().unwrap_err();
 
         assert!(matches!(err, ConfigError::InvalidListenAddr(_)));
+    }
+
+    #[test]
+    fn defaults_to_paper_live_mode() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvVarGuard::unset(ENV_MODE_KEY);
+
+        let cfg = Config::from_env().unwrap();
+
+        assert_eq!(cfg.mode, RunMode::PaperLive);
+    }
+
+    #[test]
+    fn uses_mode_override_from_env() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvVarGuard::set(ENV_MODE_KEY, "sim");
+
+        let cfg = Config::from_env().unwrap();
+
+        assert_eq!(cfg.mode, RunMode::Sim);
+    }
+
+    #[test]
+    fn returns_error_for_invalid_mode_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvVarGuard::set(ENV_MODE_KEY, "invalid");
+
+        let err = Config::from_env().unwrap_err();
+
+        assert!(matches!(err, ConfigError::InvalidMode));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn returns_error_for_non_unicode_mode_env_var() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvVarGuard::set_os(
+            ENV_MODE_KEY,
+            std::ffi::OsString::from_vec(vec![0x66, 0x6f, 0x80]),
+        );
+
+        let err = Config::from_env().unwrap_err();
+
+        assert!(matches!(err, ConfigError::NonUnicodeMode));
     }
 
     #[cfg(unix)]
