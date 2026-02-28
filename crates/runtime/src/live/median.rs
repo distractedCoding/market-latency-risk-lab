@@ -2,6 +2,12 @@ use std::collections::HashMap;
 
 use crate::live::{BtcMedianTick, NormalizedBtcTick};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MedianAggregatorConfigError {
+    InvalidStalenessMs,
+    InvalidOutlierBps,
+}
+
 #[derive(Debug, Clone)]
 pub struct MedianAggregator {
     staleness_ms: u64,
@@ -10,15 +16,36 @@ pub struct MedianAggregator {
 }
 
 impl MedianAggregator {
-    pub fn new(staleness_ms: u64, outlier_bps: f64) -> Self {
-        Self {
+    /// Creates a median aggregator with validated runtime parameters.
+    ///
+    /// - `staleness_ms`: max age (milliseconds) from the freshest venue tick.
+    /// - `outlier_bps`: outlier band in basis points around the baseline median.
+    ///
+    /// Returns an error when `staleness_ms == 0`, or when `outlier_bps` is not
+    /// finite or negative.
+    pub fn new(
+        staleness_ms: u64,
+        outlier_bps: f64,
+    ) -> Result<Self, MedianAggregatorConfigError> {
+        if staleness_ms == 0 {
+            return Err(MedianAggregatorConfigError::InvalidStalenessMs);
+        }
+        if !outlier_bps.is_finite() || outlier_bps < 0.0 {
+            return Err(MedianAggregatorConfigError::InvalidOutlierBps);
+        }
+
+        Ok(Self {
             staleness_ms,
             outlier_bps,
             latest_by_venue: HashMap::new(),
-        }
+        })
     }
 
     pub fn ingest(&mut self, tick: NormalizedBtcTick) {
+        if !tick.px.is_finite() || tick.px <= 0.0 {
+            return;
+        }
+
         match self.latest_by_venue.get(&tick.venue) {
             Some(existing) if existing.ts > tick.ts => {}
             _ => {
@@ -48,7 +75,7 @@ impl MedianAggregator {
             .filter(|tick| (tick.px - baseline_median).abs() <= threshold)
             .collect();
 
-        if filtered_ticks.is_empty() {
+        if filtered_ticks.len() < 2 {
             return None;
         }
 
@@ -92,7 +119,7 @@ mod tests {
 
     #[test]
     fn median_ignores_stale_and_outlier_ticks() {
-        let mut agg = MedianAggregator::new(2_000, 200.0);
+        let mut agg = MedianAggregator::new(2_000, 200.0).unwrap();
 
         agg.ingest(tick("binance", 60_000.0, 10_000));
         agg.ingest(tick("coinbase", 60_050.0, 10_500));
@@ -109,7 +136,7 @@ mod tests {
 
     #[test]
     fn ingest_keeps_latest_tick_per_venue() {
-        let mut agg = MedianAggregator::new(5_000, 500.0);
+        let mut agg = MedianAggregator::new(5_000, 500.0).unwrap();
         agg.ingest(tick("binance", 61_000.0, 10_100));
         agg.ingest(tick("binance", 60_500.0, 10_000));
         agg.ingest(tick("coinbase", 61_100.0, 10_100));
@@ -117,6 +144,52 @@ mod tests {
         let out = agg.compute().unwrap();
         assert_eq!(out.venue_count, 2);
         assert_eq!(out.px_median, 61_050.0);
+    }
+
+    #[test]
+    fn compute_requires_at_least_two_surviving_venues() {
+        let mut agg = MedianAggregator::new(5_000, 0.0).unwrap();
+        agg.ingest(tick("binance", 60_000.0, 10_000));
+        agg.ingest(tick("coinbase", 60_000.0, 10_100));
+        agg.ingest(tick("kraken", 60_100.0, 10_200));
+
+        let out = agg.compute().unwrap();
+        assert_eq!(out.venue_count, 2);
+
+        agg.ingest(tick("coinbase", 60_010.0, 10_300));
+        assert!(agg.compute().is_none());
+    }
+
+    #[test]
+    fn ingest_rejects_non_finite_and_non_positive_prices() {
+        let mut agg = MedianAggregator::new(5_000, 500.0).unwrap();
+        agg.ingest(tick("binance", 61_000.0, 10_100));
+        agg.ingest(tick("coinbase", 61_100.0, 10_100));
+
+        let baseline = agg.compute().unwrap();
+        assert_eq!(baseline.venue_count, 2);
+
+        agg.ingest(tick("bad-nan", f64::NAN, 10_200));
+        agg.ingest(tick("bad-inf", f64::INFINITY, 10_200));
+        agg.ingest(tick("bad-zero", 0.0, 10_200));
+        agg.ingest(tick("bad-neg", -1.0, 10_200));
+
+        let out = agg.compute().unwrap();
+        assert_eq!(out.venue_count, 2);
+        assert_eq!(out.px_median, baseline.px_median);
+    }
+
+    #[test]
+    fn new_rejects_invalid_constructor_params() {
+        assert!(MedianAggregator::new(0, 100.0).is_err());
+        assert!(MedianAggregator::new(5_000, f64::NAN).is_err());
+        assert!(MedianAggregator::new(5_000, f64::INFINITY).is_err());
+        assert!(MedianAggregator::new(5_000, -0.1).is_err());
+    }
+
+    #[test]
+    fn new_accepts_boundary_constructor_params() {
+        assert!(MedianAggregator::new(1, 0.0).is_ok());
     }
 
     fn tick(venue: &str, px: f64, ts: u64) -> NormalizedBtcTick {
