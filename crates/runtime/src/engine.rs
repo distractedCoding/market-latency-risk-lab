@@ -15,7 +15,6 @@ impl SimEngine {
 
     pub async fn step_once(&mut self) -> Vec<RuntimeEvent> {
         self.tick += 1;
-        tokio::task::yield_now().await;
 
         vec![
             RuntimeEvent::new(self.tick, RuntimeStage::TickStarted),
