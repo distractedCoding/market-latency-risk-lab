@@ -2,6 +2,7 @@ pub mod engine;
 pub mod events;
 pub mod logging;
 pub mod metrics;
+pub mod replay;
 pub mod supervisor;
 
 pub fn module_ready() -> bool {
@@ -53,5 +54,18 @@ mod tests {
         assert_eq!(report.p50_micros, 3);
         assert_eq!(report.p95_micros, 100);
         assert_eq!(report.p99_micros, 100);
+    }
+
+    #[test]
+    fn replay_writer_outputs_csv_headers() {
+        let mut output = Vec::new();
+        let mut writer = crate::replay::ReplayCsvWriter::new(&mut output);
+
+        writer.write_header().expect("header write should succeed");
+
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "t,external_px,market_px,divergence,action,equity,realized_pnl,position,halted\n"
+        );
     }
 }

@@ -6,6 +6,7 @@ pub enum RunLogEventKind {
     OrdersSimulated,
     PortfolioUpdated,
     DecisionLatencyRecorded,
+    ReplayArtifactWritten,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
