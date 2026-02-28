@@ -19,10 +19,22 @@ mod tests {
 
         assert_eq!(events.len(), 5);
         assert_eq!(events[0].stage, crate::events::RuntimeStage::TickStarted);
-        assert_eq!(events[1].stage, crate::events::RuntimeStage::MarketDataApplied);
-        assert_eq!(events[2].stage, crate::events::RuntimeStage::SignalsGenerated);
-        assert_eq!(events[3].stage, crate::events::RuntimeStage::OrdersSimulated);
-        assert_eq!(events[4].stage, crate::events::RuntimeStage::PortfolioUpdated);
+        assert_eq!(
+            events[1].stage,
+            crate::events::RuntimeStage::MarketDataApplied
+        );
+        assert_eq!(
+            events[2].stage,
+            crate::events::RuntimeStage::SignalsGenerated
+        );
+        assert_eq!(
+            events[3].stage,
+            crate::events::RuntimeStage::OrdersSimulated
+        );
+        assert_eq!(
+            events[4].stage,
+            crate::events::RuntimeStage::PortfolioUpdated
+        );
     }
 
     #[test]

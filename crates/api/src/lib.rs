@@ -137,7 +137,11 @@ mod tests {
 
         let css_response = app
             .clone()
-            .oneshot(Request::get("/static/styles.css").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::get("/static/styles.css")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(css_response.status(), StatusCode::OK);

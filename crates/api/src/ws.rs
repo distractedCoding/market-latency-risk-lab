@@ -8,10 +8,7 @@ use axum::{
 
 use crate::state::{AppState, RuntimeEvent};
 
-pub async fn events_socket(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> Response {
+pub async fn events_socket(ws: WebSocketUpgrade, State(state): State<AppState>) -> Response {
     ws.on_upgrade(move |socket| stream_events(socket, state))
 }
 

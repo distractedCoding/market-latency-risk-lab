@@ -16,11 +16,7 @@ pub struct RunLogEvent {
 }
 
 impl RunLogEvent {
-    pub fn new(
-        tick: u64,
-        kind: RunLogEventKind,
-        decision_latency_micros: Option<u64>,
-    ) -> Self {
+    pub fn new(tick: u64, kind: RunLogEventKind, decision_latency_micros: Option<u64>) -> Self {
         Self {
             tick,
             kind,

@@ -3,8 +3,7 @@ use axum::{
     http::{header, StatusCode},
     response::{Html, IntoResponse},
     routing::{get, post},
-    Json,
-    Router,
+    Json, Router,
 };
 use serde::Serialize;
 
@@ -36,7 +35,10 @@ async fn dashboard_styles() -> impl IntoResponse {
 
 async fn dashboard_script() -> impl IntoResponse {
     (
-        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        [(
+            header::CONTENT_TYPE,
+            "application/javascript; charset=utf-8",
+        )],
         ui::app_js(),
     )
 }
