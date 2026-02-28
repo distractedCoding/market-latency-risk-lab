@@ -1,0 +1,130 @@
+use std::collections::HashMap;
+
+use crate::live::{BtcMedianTick, NormalizedBtcTick};
+
+#[derive(Debug, Clone)]
+pub struct MedianAggregator {
+    staleness_ms: u64,
+    outlier_bps: f64,
+    latest_by_venue: HashMap<String, NormalizedBtcTick>,
+}
+
+impl MedianAggregator {
+    pub fn new(staleness_ms: u64, outlier_bps: f64) -> Self {
+        Self {
+            staleness_ms,
+            outlier_bps,
+            latest_by_venue: HashMap::new(),
+        }
+    }
+
+    pub fn ingest(&mut self, tick: NormalizedBtcTick) {
+        match self.latest_by_venue.get(&tick.venue) {
+            Some(existing) if existing.ts > tick.ts => {}
+            _ => {
+                self.latest_by_venue.insert(tick.venue.clone(), tick);
+            }
+        }
+    }
+
+    pub fn compute(&self) -> Option<BtcMedianTick> {
+        let latest_ts = self.latest_by_venue.values().map(|tick| tick.ts).max()?;
+
+        let fresh_ticks: Vec<&NormalizedBtcTick> = self
+            .latest_by_venue
+            .values()
+            .filter(|tick| latest_ts.saturating_sub(tick.ts) <= self.staleness_ms)
+            .collect();
+
+        if fresh_ticks.is_empty() {
+            return None;
+        }
+
+        let baseline_median = median_price(&fresh_ticks)?;
+        let threshold = baseline_median * (self.outlier_bps / 10_000.0);
+
+        let filtered_ticks: Vec<&NormalizedBtcTick> = fresh_ticks
+            .into_iter()
+            .filter(|tick| (tick.px - baseline_median).abs() <= threshold)
+            .collect();
+
+        if filtered_ticks.is_empty() {
+            return None;
+        }
+
+        let px_median = median_price(&filtered_ticks)?;
+        let min_px = filtered_ticks.iter().map(|tick| tick.px).fold(f64::INFINITY, f64::min);
+        let max_px = filtered_ticks
+            .iter()
+            .map(|tick| tick.px)
+            .fold(f64::NEG_INFINITY, f64::max);
+        let ts = filtered_ticks.iter().map(|tick| tick.ts).max()?;
+
+        Some(BtcMedianTick::new(
+            px_median,
+            max_px - min_px,
+            filtered_ticks.len() as u32,
+            ts,
+        ))
+    }
+}
+
+fn median_price(ticks: &[&NormalizedBtcTick]) -> Option<f64> {
+    if ticks.is_empty() {
+        return None;
+    }
+
+    let mut prices: Vec<f64> = ticks.iter().map(|tick| tick.px).collect();
+    prices.sort_by(|a, b| a.total_cmp(b));
+
+    let mid = prices.len() / 2;
+    if prices.len() % 2 == 0 {
+        Some((prices[mid - 1] + prices[mid]) / 2.0)
+    } else {
+        Some(prices[mid])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MedianAggregator;
+    use crate::live::NormalizedBtcTick;
+
+    #[test]
+    fn median_ignores_stale_and_outlier_ticks() {
+        let mut agg = MedianAggregator::new(2_000, 200.0);
+
+        agg.ingest(tick("binance", 60_000.0, 10_000));
+        agg.ingest(tick("coinbase", 60_050.0, 10_500));
+        agg.ingest(tick("kraken", 59_980.0, 10_300));
+
+        agg.ingest(tick("old-feed", 60_040.0, 8_000));
+        agg.ingest(tick("bad-feed", 70_000.0, 10_400));
+
+        // fresh ticks + one stale + one outlier
+        let out = agg.compute().unwrap();
+        assert_eq!(out.venue_count, 3);
+        assert!(out.px_median > 0.0);
+    }
+
+    #[test]
+    fn ingest_keeps_latest_tick_per_venue() {
+        let mut agg = MedianAggregator::new(5_000, 500.0);
+        agg.ingest(tick("binance", 61_000.0, 10_100));
+        agg.ingest(tick("binance", 60_500.0, 10_000));
+        agg.ingest(tick("coinbase", 61_100.0, 10_100));
+
+        let out = agg.compute().unwrap();
+        assert_eq!(out.venue_count, 2);
+        assert_eq!(out.px_median, 61_050.0);
+    }
+
+    fn tick(venue: &str, px: f64, ts: u64) -> NormalizedBtcTick {
+        NormalizedBtcTick {
+            venue: venue.to_string(),
+            px,
+            size: 1.0,
+            ts,
+        }
+    }
+}
