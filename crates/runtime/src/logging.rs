@@ -1,15 +1,29 @@
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunLogEventKind {
+    TickStarted,
+    MarketDataApplied,
+    SignalsGenerated,
+    OrdersSimulated,
+    PortfolioUpdated,
+    DecisionLatencyRecorded,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunLogEvent {
     pub tick: u64,
-    pub event: String,
+    pub kind: RunLogEventKind,
     pub decision_latency_micros: Option<u64>,
 }
 
 impl RunLogEvent {
-    pub fn new(tick: u64, event: impl Into<String>, decision_latency_micros: Option<u64>) -> Self {
+    pub fn new(
+        tick: u64,
+        kind: RunLogEventKind,
+        decision_latency_micros: Option<u64>,
+    ) -> Self {
         Self {
             tick,
-            event: event.into(),
+            kind,
             decision_latency_micros,
         }
     }
