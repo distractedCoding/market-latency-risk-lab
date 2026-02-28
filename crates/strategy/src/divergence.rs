@@ -8,12 +8,16 @@ pub enum Signal {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StrategyError {
     NonFiniteInput,
+    NonFiniteMarketExposure,
     NonPositiveMarketPrice,
     NegativeThreshold,
     InvalidBaseOrderSize,
+    InvalidMarketId,
+    InvalidMarketExposure,
     InvalidPositionSize,
     InvalidStartingEquity,
     InvalidDailyLossCapPct,
+    MarketExposureCapExceeded,
     NonFinitePnl,
 }
 
