@@ -44,6 +44,10 @@ async fn stream_events(mut socket: WebSocket, state: AppState) {
 }
 
 async fn send_event(socket: &mut WebSocket, event: &RuntimeEvent) -> Result<(), ()> {
-    let payload = serde_json::to_string(event).map_err(|_| ())?;
+    let payload = event_json(event)?;
     socket.send(Message::Text(payload)).await.map_err(|_| ())
+}
+
+fn event_json(event: &RuntimeEvent) -> Result<String, ()> {
+    serde_json::to_string(event).map_err(|_| ())
 }

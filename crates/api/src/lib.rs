@@ -28,7 +28,7 @@ mod tests {
 
     use crate::{
         app, routes,
-        state::{AppState, FeedMode, RuntimeEvent},
+        state::{AppState, FeedMode, PaperOrderSide, RuntimeEvent},
     };
 
     #[derive(Debug, Deserialize)]
@@ -98,6 +98,50 @@ mod tests {
     async fn parse_json<T: serde::de::DeserializeOwned>(response: axum::response::Response) -> T {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
+    }
+
+    async fn next_ws_json() -> Value {
+        next_ws_json_for_event(RuntimeEvent::paper_fill(
+            "btc-up-down",
+            PaperOrderSide::Buy,
+            5.0,
+            0.52,
+        ))
+        .await
+    }
+
+    async fn next_ws_json_for_event(event: RuntimeEvent) -> Value {
+        let state = AppState::new();
+        let app = routes::router(state.clone());
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let url = format!("ws://{addr}/ws/events");
+        let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+
+        let _ = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+
+        state.publish_event(event).unwrap();
+
+        let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        server.abort();
+
+        match message {
+            Message::Text(text) => serde_json::from_str(text.as_ref()).unwrap(),
+            other => panic!("expected text websocket message, got {other:?}"),
+        }
     }
 
     #[tokio::test]
@@ -266,7 +310,7 @@ mod tests {
             value.get("event_type").and_then(Value::as_str),
             Some("connected")
         );
-        assert_eq!(value.get("run_id").cloned(), Some(Value::Null));
+        assert!(value.get("run_id").is_none());
 
         server.abort();
     }
@@ -311,5 +355,44 @@ mod tests {
         assert_eq!(value.get("run_id").and_then(Value::as_u64), Some(42));
 
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn websocket_emits_paper_fill_event_payload() {
+        let msg = next_ws_json().await;
+        assert_eq!(msg["event_type"], "paper_fill");
+        assert!(msg["fill_px"].as_f64().is_some());
+    }
+
+    #[tokio::test]
+    async fn websocket_emits_paper_intent_event_payload() {
+        let msg = next_ws_json_for_event(RuntimeEvent::paper_intent(
+            "btc-up-down",
+            PaperOrderSide::Sell,
+            3.0,
+            0.49,
+        ))
+        .await;
+
+        assert_eq!(msg["event_type"], "paper_intent");
+        assert_eq!(msg["market_id"], "btc-up-down");
+        assert_eq!(msg["side"], "sell");
+        assert!(msg["qty"].as_f64().is_some());
+        assert!(msg["limit_px"].as_f64().is_some());
+    }
+
+    #[tokio::test]
+    async fn websocket_emits_risk_reject_event_payload() {
+        let msg = next_ws_json_for_event(RuntimeEvent::risk_reject(
+            "btc-up-down",
+            "max_market_exposure",
+            7.0,
+        ))
+        .await;
+
+        assert_eq!(msg["event_type"], "risk_reject");
+        assert_eq!(msg["market_id"], "btc-up-down");
+        assert_eq!(msg["reason"], "max_market_exposure");
+        assert!(msg["requested_qty"].as_f64().is_some());
     }
 }

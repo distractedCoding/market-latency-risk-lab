@@ -42,29 +42,69 @@ pub enum StartRunError {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RuntimeEventType {
-    Connected,
-    RunStarted,
+pub enum PaperOrderSide {
+    Buy,
+    Sell,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
-pub struct RuntimeEvent {
-    pub event_type: RuntimeEventType,
-    pub run_id: Option<u64>,
+#[serde(tag = "event_type", rename_all = "snake_case")]
+pub enum RuntimeEvent {
+    Connected,
+    RunStarted {
+        run_id: u64,
+    },
+    PaperIntent {
+        market_id: String,
+        side: PaperOrderSide,
+        qty: f64,
+        limit_px: f64,
+    },
+    PaperFill {
+        market_id: String,
+        side: PaperOrderSide,
+        qty: f64,
+        fill_px: f64,
+    },
+    RiskReject {
+        market_id: String,
+        reason: String,
+        requested_qty: f64,
+    },
 }
 
 impl RuntimeEvent {
     pub fn connected() -> Self {
-        Self {
-            event_type: RuntimeEventType::Connected,
-            run_id: None,
-        }
+        Self::Connected
     }
 
     pub fn run_started(run_id: u64) -> Self {
-        Self {
-            event_type: RuntimeEventType::RunStarted,
-            run_id: Some(run_id),
+        Self::RunStarted { run_id }
+    }
+
+    pub fn paper_intent(market_id: impl Into<String>, side: PaperOrderSide, qty: f64, limit_px: f64) -> Self {
+        Self::PaperIntent {
+            market_id: market_id.into(),
+            side,
+            qty,
+            limit_px,
+        }
+    }
+
+    pub fn paper_fill(market_id: impl Into<String>, side: PaperOrderSide, qty: f64, fill_px: f64) -> Self {
+        Self::PaperFill {
+            market_id: market_id.into(),
+            side,
+            qty,
+            fill_px,
+        }
+    }
+
+    pub fn risk_reject(market_id: impl Into<String>, reason: impl Into<String>, requested_qty: f64) -> Self {
+        Self::RiskReject {
+            market_id: market_id.into(),
+            reason: reason.into(),
+            requested_qty,
         }
     }
 }
