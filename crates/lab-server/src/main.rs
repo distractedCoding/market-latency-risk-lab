@@ -5,6 +5,7 @@ use std::error::Error;
 use std::fs::{self, File};
 use std::path::Path;
 
+use runtime::logging::PaperJournalRow;
 use runtime::replay::ReplayCsvWriter;
 use tokio::net::TcpListener;
 
@@ -41,7 +42,12 @@ fn initialize_replay_output(path: &str) -> Result<(), std::io::Error> {
     let replay_file = File::create(replay_path)?;
     let mut replay_writer = ReplayCsvWriter::new(replay_file);
     replay_writer.write_header()?;
+    replay_writer.append_paper_journal_rows(&initial_paper_journal_rows())?;
     Ok(())
+}
+
+fn initial_paper_journal_rows() -> Vec<PaperJournalRow> {
+    Vec::new()
 }
 
 #[cfg(test)]

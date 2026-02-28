@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::logging::{RunLogEvent, RunLogEventKind, RunLogWriter};
+use crate::logging::{PaperJournalRow, RunLogEvent, RunLogEventKind, RunLogWriter};
 
 pub const REPLAY_CSV_HEADER: &str =
     "t,external_px,market_px,divergence,action,equity,realized_pnl,position,halted\n";
@@ -32,13 +32,23 @@ impl<W: Write> ReplayCsvWriter<W> {
         ));
         Ok(())
     }
+
+    pub fn append_paper_journal_rows(&mut self, rows: &[PaperJournalRow]) -> io::Result<()> {
+        for row in rows {
+            let action = row.kind.as_replay_action();
+            writeln!(self.writer, "{},,,,{action},,,,", row.tick)?;
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::{cell::Cell, io, rc::Rc};
 
-    use crate::logging::{InMemoryRunLogWriter, RunLogEventKind, RunLogWriter};
+    use crate::logging::{
+        InMemoryRunLogWriter, PaperJournalRow, PaperJournalRowKind, RunLogEventKind, RunLogWriter,
+    };
 
     use super::{ReplayCsvWriter, REPLAY_CSV_HEADER};
 
@@ -130,5 +140,27 @@ mod tests {
             log_writer.events()[0].kind,
             RunLogEventKind::ReplayArtifactWritten
         );
+    }
+
+    fn sample_paper_fill_row() -> PaperJournalRow {
+        PaperJournalRow {
+            tick: 17,
+            kind: PaperJournalRowKind::PaperFill,
+            action_detail: "buy:market-1@0.62x5".to_string(),
+        }
+    }
+
+    fn write_csv_for_test(rows: Vec<PaperJournalRow>) -> io::Result<String> {
+        let mut output = Vec::new();
+        let mut writer = ReplayCsvWriter::new(&mut output);
+        writer.write_header()?;
+        writer.append_paper_journal_rows(&rows)?;
+        Ok(String::from_utf8(output).expect("csv output should be utf8"))
+    }
+
+    #[test]
+    fn replay_writer_appends_paper_fill_rows() {
+        let csv = write_csv_for_test(vec![sample_paper_fill_row()]).unwrap();
+        assert!(csv.contains("paper_fill"));
     }
 }
