@@ -14,22 +14,88 @@ pub fn app() -> Router {
 #[cfg(test)]
 mod tests {
     use axum::{
-        body::Body,
-        http::{Request, StatusCode},
+        body::{to_bytes, Body},
+        http::{header, Request, StatusCode},
     };
+    use serde::Deserialize;
     use tower::ServiceExt;
 
-    use crate::app;
+    use crate::{app, routes, state::AppState};
+
+    #[derive(Debug, Deserialize)]
+    struct StartRunResponse {
+        run_id: u64,
+    }
+
+    #[derive(Debug)]
+    struct StartRunResult {
+        status: StatusCode,
+        location: Option<String>,
+        payload: StartRunResponse,
+    }
+
+    async fn start_run_request(app: axum::Router) -> StartRunResult {
+        let response = app
+            .oneshot(Request::post("/runs").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        let status = response.status();
+        let location = response
+            .headers()
+            .get(header::LOCATION)
+            .and_then(|value| value.to_str().ok())
+            .map(ToOwned::to_owned);
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let payload: StartRunResponse = serde_json::from_slice(&body).unwrap();
+
+        StartRunResult {
+            status,
+            location,
+            payload,
+        }
+    }
 
     #[tokio::test]
-    async fn post_runs_starts_new_run() {
+    async fn post_runs_returns_run_id_and_location() {
         let app = app();
+
+        let result = start_run_request(app).await;
+
+        assert_eq!(result.status, StatusCode::CREATED);
+        assert_eq!(result.payload.run_id, 1);
+        assert_eq!(result.location.as_deref(), Some("/runs/1"));
+    }
+
+    #[tokio::test]
+    async fn post_runs_returns_monotonic_unique_run_ids() {
+        let app = app();
+
+        let result_one = start_run_request(app.clone()).await;
+        let result_two = start_run_request(app.clone()).await;
+        let result_three = start_run_request(app).await;
+
+        assert_eq!(result_one.status, StatusCode::CREATED);
+        assert_eq!(result_two.status, StatusCode::CREATED);
+        assert_eq!(result_three.status, StatusCode::CREATED);
+
+        assert_eq!(result_one.payload.run_id, 1);
+        assert_eq!(result_two.payload.run_id, 2);
+        assert_eq!(result_three.payload.run_id, 3);
+        assert_eq!(result_one.location.as_deref(), Some("/runs/1"));
+        assert_eq!(result_two.location.as_deref(), Some("/runs/2"));
+        assert_eq!(result_three.location.as_deref(), Some("/runs/3"));
+    }
+
+    #[tokio::test]
+    async fn post_runs_returns_internal_server_error_on_run_id_overflow() {
+        let app = routes::router(AppState::with_next_run_id_for_test(u64::MAX));
 
         let response = app
             .oneshot(Request::post("/runs").body(Body::empty()).unwrap())
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::CREATED);
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     }
 }
