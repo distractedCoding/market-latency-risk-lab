@@ -125,6 +125,67 @@ mod tests {
     }
 
     #[test]
+    fn mark_failed_from_starting_returns_none_and_preserves_state() {
+        let mut supervisor = Supervisor::new();
+        let task_id = TaskId(21);
+        supervisor.register(task_id);
+
+        assert!(supervisor.mark_failed(task_id).is_none());
+        let task = supervisor.tasks.get(&task_id).copied().unwrap();
+        assert_eq!(task.state, TaskLifecycle::Starting);
+    }
+
+    #[test]
+    fn mark_failed_from_restart_planned_returns_none_and_preserves_state() {
+        let mut supervisor = Supervisor::new();
+        let task_id = TaskId(22);
+        supervisor.register(task_id);
+        assert!(supervisor.mark_running(task_id));
+        assert!(supervisor.mark_failed(task_id).is_some());
+
+        assert!(supervisor.mark_failed(task_id).is_none());
+        let task = supervisor.tasks.get(&task_id).copied().unwrap();
+        assert_eq!(task.state, TaskLifecycle::RestartPlanned);
+    }
+
+    #[test]
+    fn mark_failed_from_stopped_returns_none_and_preserves_state() {
+        let mut supervisor = Supervisor::new();
+        let task_id = TaskId(23);
+        supervisor.register(task_id);
+        assert!(supervisor.mark_running(task_id));
+        assert!(supervisor.mark_stopped(task_id));
+
+        assert!(supervisor.mark_failed(task_id).is_none());
+        let task = supervisor.tasks.get(&task_id).copied().unwrap();
+        assert_eq!(task.state, TaskLifecycle::Stopped);
+    }
+
+    #[test]
+    fn mark_stopped_from_starting_returns_false_and_preserves_state() {
+        let mut supervisor = Supervisor::new();
+        let task_id = TaskId(24);
+        supervisor.register(task_id);
+
+        assert!(!supervisor.mark_stopped(task_id));
+        let task = supervisor.tasks.get(&task_id).copied().unwrap();
+        assert_eq!(task.state, TaskLifecycle::Starting);
+    }
+
+    #[test]
+    fn mark_stopped_from_stopped_returns_false_and_preserves_state() {
+        let mut supervisor = Supervisor::new();
+        let task_id = TaskId(25);
+        supervisor.register(task_id);
+        assert!(supervisor.mark_running(task_id));
+        assert!(supervisor.mark_stopped(task_id));
+
+        assert!(!supervisor.mark_stopped(task_id));
+        let task = supervisor.tasks.get(&task_id).copied().unwrap();
+        assert_eq!(task.state, TaskLifecycle::Stopped);
+    }
+
+    #[test]
     fn unknown_task_operations_remain_distinct() {
         let mut supervisor = Supervisor::new();
         let unknown = TaskId(99);
