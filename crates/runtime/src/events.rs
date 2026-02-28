@@ -5,6 +5,8 @@ pub enum RuntimeStage {
     SignalsGenerated,
     OrdersSimulated,
     PortfolioUpdated,
+    PaperIntentCreated,
+    PaperFillRecorded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

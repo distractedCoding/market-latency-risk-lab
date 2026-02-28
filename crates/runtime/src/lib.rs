@@ -2,6 +2,7 @@ pub mod benchmark;
 pub mod engine;
 pub mod events;
 pub mod live;
+pub mod live_runner;
 pub mod logging;
 pub mod metrics;
 pub mod paper_exec;
