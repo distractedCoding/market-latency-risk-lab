@@ -310,7 +310,7 @@ mod tests {
             value.get("event_type").and_then(Value::as_str),
             Some("connected")
         );
-        assert!(value.get("run_id").is_none());
+        assert_eq!(value.get("run_id"), Some(&Value::Null));
 
         server.abort();
     }
@@ -361,7 +361,10 @@ mod tests {
     async fn websocket_emits_paper_fill_event_payload() {
         let msg = next_ws_json().await;
         assert_eq!(msg["event_type"], "paper_fill");
-        assert!(msg["fill_px"].as_f64().is_some());
+        assert_eq!(msg["market_id"], "btc-up-down");
+        assert_eq!(msg["side"], "buy");
+        assert_eq!(msg["qty"].as_f64(), Some(5.0));
+        assert_eq!(msg["fill_px"].as_f64(), Some(0.52));
     }
 
     #[tokio::test]

@@ -50,7 +50,9 @@ pub enum PaperOrderSide {
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(tag = "event_type", rename_all = "snake_case")]
 pub enum RuntimeEvent {
-    Connected,
+    Connected {
+        run_id: Option<u64>,
+    },
     RunStarted {
         run_id: u64,
     },
@@ -75,7 +77,7 @@ pub enum RuntimeEvent {
 
 impl RuntimeEvent {
     pub fn connected() -> Self {
-        Self::Connected
+        Self::Connected { run_id: None }
     }
 
     pub fn run_started(run_id: u64) -> Self {
