@@ -4,7 +4,9 @@ use crate::live::{BtcMedianTick, NormalizedBtcTick};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MedianAggregatorConfigError {
+    /// `staleness_ms` must be greater than zero.
     InvalidStalenessMs,
+    /// `outlier_bps` must be finite and non-negative.
     InvalidOutlierBps,
 }
 
@@ -41,6 +43,12 @@ impl MedianAggregator {
         })
     }
 
+    /// Ingests a normalized venue tick into the latest-per-venue cache.
+    ///
+    /// Ticks with invalid prices (`NaN`, infinite, or `<= 0.0`) are silently
+    /// ignored and do not update aggregator state.
+    ///
+    /// For valid prices, only the newest tick per venue is retained.
     pub fn ingest(&mut self, tick: NormalizedBtcTick) {
         if !tick.px.is_finite() || tick.px <= 0.0 {
             return;
@@ -54,6 +62,17 @@ impl MedianAggregator {
         }
     }
 
+    /// Computes a robust median snapshot across currently tracked venues.
+    ///
+    /// The aggregator starts from the latest tick per venue, removes stale ticks
+    /// relative to the freshest timestamp, computes a baseline median, then drops
+    /// outliers outside the configured basis-point band.
+    ///
+    /// Returns `Some(BtcMedianTick)` only when at least two venues survive all
+    /// filtering steps.
+    ///
+    /// Returns `None` when no ticks are available, all ticks are stale, or fewer
+    /// than two venues survive staleness/outlier filtering.
     pub fn compute(&self) -> Option<BtcMedianTick> {
         let latest_ts = self.latest_by_venue.values().map(|tick| tick.ts).max()?;
 
