@@ -12,6 +12,9 @@ pub enum StrategyError {
     NegativeThreshold,
     InvalidBaseOrderSize,
     InvalidPositionSize,
+    InvalidStartingEquity,
+    InvalidDailyLossCapPct,
+    NonFinitePnl,
 }
 
 pub fn divergence(prediction_price: f64, market_price: f64) -> Result<f64, StrategyError> {

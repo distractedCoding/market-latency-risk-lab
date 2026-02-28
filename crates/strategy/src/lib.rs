@@ -1,7 +1,9 @@
 pub mod divergence;
+pub mod risk;
 pub mod sizing;
 
 pub use divergence::{divergence, emit_signal, Signal, StrategyError};
+pub use risk::RiskState;
 pub use sizing::{regime_multiplier, size_for_signal, Regime, SizingConfig};
 
 pub fn module_ready() -> bool {
@@ -11,6 +13,7 @@ pub fn module_ready() -> bool {
 #[cfg(test)]
 mod tests {
     use crate::divergence::{emit_signal, Signal, StrategyError};
+    use crate::risk::RiskState;
     use crate::sizing::{size_for_signal, Regime, SizingConfig};
 
     #[test]
@@ -115,5 +118,14 @@ mod tests {
             SizingConfig::new(f64::INFINITY),
             Err(StrategyError::InvalidBaseOrderSize)
         );
+    }
+
+    #[test]
+    fn halts_when_daily_loss_cap_is_breached() {
+        let mut risk = RiskState::new(100_000.0, 2.0).expect("valid risk state");
+
+        risk.apply_realized_pnl(-2_001.0).expect("valid pnl update");
+
+        assert!(risk.is_halted());
     }
 }
