@@ -34,3 +34,13 @@ python -m sim.main --steps 3000 --threshold 0.003 --output artifacts/run.csv
 - enable stress mode for sudden volatility bursts
 
 See `docs/methodology.md` for assumptions and limitations.
+
+## Runtime benchmarks
+Run runtime tests and benchmarks from the repository root:
+
+```bash
+PATH="$HOME/.cargo/bin:$PATH" cargo test -p runtime -q
+PATH="$HOME/.cargo/bin:$PATH" cargo bench -p runtime --no-fail-fast
+```
+
+Benchmark outputs include throughput timing for batched `step_once` execution and latency percentiles (`p50`, `p95`, `p99`) with the runtime budget derived from `TARGET_ORDERS_PER_SEC`.

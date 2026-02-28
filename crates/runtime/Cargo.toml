@@ -5,3 +5,14 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "throughput"
+harness = false
+
+[[bench]]
+name = "latency"
+harness = false

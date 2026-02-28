@@ -5,6 +5,8 @@ pub mod metrics;
 pub mod replay;
 pub mod supervisor;
 
+pub const TARGET_ORDERS_PER_SEC: u64 = 1000;
+
 pub fn module_ready() -> bool {
     true
 }
@@ -67,5 +69,10 @@ mod tests {
             String::from_utf8(output).unwrap(),
             "t,external_px,market_px,divergence,action,equity,realized_pnl,position,halted\n"
         );
+    }
+
+    #[test]
+    fn benchmark_target_is_defined() {
+        assert_eq!(crate::TARGET_ORDERS_PER_SEC, 1000);
     }
 }
