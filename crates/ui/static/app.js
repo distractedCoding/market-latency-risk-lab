@@ -35,12 +35,15 @@ function updateFeedHealth(data) {
   }
 
   const status = data.status || data.health || data.state;
-  if (!status) {
+  const mode = data.mode || "?";
+  const source = data.source || data.feed_source || "?";
+  if (!status && mode === "?" && source === "?") {
     return;
   }
 
   const lagMs = Number.isFinite(data.lag_ms) ? ` (${data.lag_ms} ms lag)` : "";
-  feedHealthEl.textContent = `${status}${lagMs}`;
+  const statusLabel = status ? `${status}${lagMs}` : "unknown";
+  feedHealthEl.textContent = `${statusLabel} | mode: ${mode} | source: ${source}`;
 }
 
 function updatePaperFills(data) {
@@ -53,7 +56,7 @@ function updatePaperFills(data) {
 
   const side = data.side || "?";
   const size = data.size ?? data.qty ?? "?";
-  const price = data.price ?? "?";
+  const price = data.fill_px ?? "?";
   paperFillsLastEl.textContent = `${side} ${size} @ ${price}`;
 }
 
@@ -63,7 +66,7 @@ function routeTelemetry(rawEvent) {
     return;
   }
 
-  const eventType = parsed.type || parsed.event;
+  const eventType = parsed.event_type;
   if (eventType === "feed_health") {
     updateFeedHealth(parsed);
     return;
@@ -101,4 +104,23 @@ function connect() {
   });
 }
 
+async function fetchFeedHealth() {
+  if (!feedHealthEl) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/feed/health");
+    if (!response.ok) {
+      return;
+    }
+
+    const payload = await response.json();
+    if (payload && typeof payload === "object") {
+      updateFeedHealth(payload);
+    }
+  } catch {}
+}
+
+fetchFeedHealth();
 connect();
