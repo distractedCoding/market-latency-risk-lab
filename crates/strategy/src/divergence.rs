@@ -28,19 +28,22 @@ pub fn divergence(prediction_price: f64, market_price: f64) -> Result<f64, Strat
     Ok(prediction_price - market_price)
 }
 
-pub fn emit_signal(
+pub fn normalized_divergence(
     prediction_price: f64,
     market_price: f64,
-    threshold: f64,
-) -> Result<Signal, StrategyError> {
-    if !threshold.is_finite() {
+) -> Result<f64, StrategyError> {
+    let raw_divergence = divergence(prediction_price, market_price)?;
+
+    Ok(raw_divergence / market_price)
+}
+
+pub fn signal_from_divergence(divergence: f64, threshold: f64) -> Result<Signal, StrategyError> {
+    if !divergence.is_finite() || !threshold.is_finite() {
         return Err(StrategyError::NonFiniteInput);
     }
     if threshold < 0.0 {
         return Err(StrategyError::NegativeThreshold);
     }
-
-    let divergence = divergence(prediction_price, market_price)?;
 
     if divergence > threshold {
         Ok(Signal::Buy)
@@ -49,4 +52,14 @@ pub fn emit_signal(
     } else {
         Ok(Signal::Hold)
     }
+}
+
+pub fn emit_signal(
+    prediction_price: f64,
+    market_price: f64,
+    threshold: f64,
+) -> Result<Signal, StrategyError> {
+    let divergence = divergence(prediction_price, market_price)?;
+
+    signal_from_divergence(divergence, threshold)
 }
