@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+api = { path = "../api" }
+axum = "0.7"
+runtime = { path = "../runtime" }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
+ui = { path = "../ui" }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
