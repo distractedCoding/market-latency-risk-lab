@@ -13,8 +13,11 @@ Use this checklist before opening a pull request for the Rust workspace.
 3. `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace`
    - Expected: command exits with status 0 and all tests pass.
 
-4. `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace paper_live`
-   - Expected: command exits with status 0 and paper-live-focused verification tests pass across workspace crates.
+4. `PATH="$HOME/.cargo/bin:$PATH" cargo test -p runtime engine::tests::live_runner_emits_intent_then_fill_events -- --exact`
+   - Expected: command exits with status 0 and reports exactly one matching runtime test passed.
 
-5. `PATH="$HOME/.cargo/bin:$PATH" cargo bench -p runtime --no-fail-fast`
+5. `PATH="$HOME/.cargo/bin:$PATH" cargo test -p api tests::websocket_emits_paper_fill_event_payload -- --exact`
+   - Expected: command exits with status 0 and reports exactly one matching API websocket payload test passed.
+
+6. `PATH="$HOME/.cargo/bin:$PATH" cargo bench -p runtime --no-fail-fast`
    - Expected: command exits with status 0 and runtime benchmarks complete without failures.

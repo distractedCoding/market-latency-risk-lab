@@ -19,7 +19,9 @@ jobs:
           cargo clippy --workspace -- -D warnings
           cargo test --workspace
       - name: Paper Live Integration Verify
-        run: cargo test --workspace paper_live
+        run: |
+          cargo test -p runtime engine::tests::live_runner_emits_intent_then_fill_events -- --exact
+          cargo test -p api tests::websocket_emits_paper_fill_event_payload -- --exact
       - name: Runtime Benchmark Check
         run: cargo bench -p runtime --no-fail-fast
       - name: Lab server smoke check
