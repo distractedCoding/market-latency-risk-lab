@@ -8,13 +8,15 @@ use axum::{
 use serde::Serialize;
 
 use crate::{
-    state::{AppState, RuntimeEvent},
+    state::{AppState, DiscoveredMarketsResponse, FeedHealthResponse, RuntimeEvent},
     ws,
 };
 
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(dashboard_index))
+        .route("/feed/health", get(feed_health))
+        .route("/markets/discovered", get(markets_discovered))
         .route("/runs", post(start_run))
         .route("/static/styles.css", get(dashboard_styles))
         .route("/static/app.js", get(dashboard_script))
@@ -41,6 +43,14 @@ async fn dashboard_script() -> impl IntoResponse {
         )],
         ui::app_js(),
     )
+}
+
+async fn feed_health(State(state): State<AppState>) -> Json<FeedHealthResponse> {
+    Json(state.feed_health())
+}
+
+async fn markets_discovered(State(state): State<AppState>) -> Json<DiscoveredMarketsResponse> {
+    Json(state.discovered_markets())
 }
 
 #[derive(Debug, Serialize)]

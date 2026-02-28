@@ -5,6 +5,36 @@ use std::sync::{
 
 use tokio::sync::broadcast;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FeedMode {
+    PaperLive,
+    Sim,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct SourceCount {
+    pub source: String,
+    pub count: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct FeedHealthResponse {
+    pub mode: FeedMode,
+    pub source_counts: Vec<SourceCount>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct DiscoveredMarket {
+    pub source: String,
+    pub market_id: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize)]
+pub struct DiscoveredMarketsResponse {
+    pub markets: Vec<DiscoveredMarket>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartRunError {
     RunIdOverflow,
@@ -80,6 +110,19 @@ impl AppState {
         event: RuntimeEvent,
     ) -> Result<usize, broadcast::error::SendError<RuntimeEvent>> {
         self.events_tx.send(event)
+    }
+
+    pub fn feed_health(&self) -> FeedHealthResponse {
+        FeedHealthResponse {
+            mode: FeedMode::PaperLive,
+            source_counts: Vec::new(),
+        }
+    }
+
+    pub fn discovered_markets(&self) -> DiscoveredMarketsResponse {
+        DiscoveredMarketsResponse {
+            markets: Vec::new(),
+        }
     }
 
     #[cfg(test)]

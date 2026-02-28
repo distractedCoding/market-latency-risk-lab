@@ -43,6 +43,29 @@ mod tests {
         payload: StartRunResponse,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct SourceCount {
+        source: String,
+        count: u64,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct FeedHealthResponse {
+        mode: String,
+        source_counts: Vec<SourceCount>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct DiscoveredMarket {
+        source: String,
+        market_id: String,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct DiscoveredMarketsResponse {
+        markets: Vec<DiscoveredMarket>,
+    }
+
     async fn start_run_request(app: axum::Router) -> StartRunResult {
         let response = app
             .oneshot(Request::post("/runs").body(Body::empty()).unwrap())
@@ -63,6 +86,18 @@ mod tests {
             location,
             payload,
         }
+    }
+
+    async fn send_get(app: &axum::Router, path: &str) -> axum::response::Response {
+        app.clone()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn parse_json<T: serde::de::DeserializeOwned>(response: axum::response::Response) -> T {
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&body).unwrap()
     }
 
     #[tokio::test]
@@ -94,6 +129,46 @@ mod tests {
         assert_eq!(result_one.location.as_deref(), Some("/runs/1"));
         assert_eq!(result_two.location.as_deref(), Some("/runs/2"));
         assert_eq!(result_three.location.as_deref(), Some("/runs/3"));
+    }
+
+    #[tokio::test]
+    async fn get_feed_health_returns_mode_and_source_counts() {
+        let app = app();
+        let res = send_get(&app, "/feed/health").await;
+        assert_eq!(res.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn get_feed_health_returns_typed_payload() {
+        let app = app();
+        let response = send_get(&app, "/feed/health").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: FeedHealthResponse = parse_json(response).await;
+        assert_eq!(payload.mode, "paper-live");
+        assert!(
+            payload
+                .source_counts
+                .iter()
+                .all(|source_count| source_count.count == 0 || !source_count.source.is_empty())
+        );
+        assert!(payload.source_counts.is_empty());
+    }
+
+    #[tokio::test]
+    async fn get_markets_discovered_returns_typed_payload() {
+        let app = app();
+        let response = send_get(&app, "/markets/discovered").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: DiscoveredMarketsResponse = parse_json(response).await;
+        assert!(
+            payload
+                .markets
+                .iter()
+                .all(|market| !market.source.is_empty() && !market.market_id.is_empty())
+        );
+        assert!(payload.markets.is_empty());
     }
 
     #[tokio::test]
