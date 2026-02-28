@@ -81,6 +81,31 @@ impl Default for PriceSnapshot {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct StrategyPerfSummary {
+    pub execution_mode: String,
+    pub lag_threshold_pct: f64,
+    pub decision_p95_us: u64,
+    pub intents_per_sec: u64,
+    pub fills_per_sec: u64,
+    pub lag_triggers: u64,
+    pub halted: bool,
+}
+
+impl Default for StrategyPerfSummary {
+    fn default() -> Self {
+        Self {
+            execution_mode: "paper".to_string(),
+            lag_threshold_pct: 0.3,
+            decision_p95_us: 0,
+            intents_per_sec: 0,
+            fills_per_sec: 0,
+            lag_triggers: 0,
+            halted: false,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartRunError {
     RunIdOverflow,
@@ -138,6 +163,15 @@ pub enum RuntimeEvent {
         polymarket_yes_ask: Option<f64>,
         polymarket_yes_mid: Option<f64>,
         ts: u64,
+    },
+    StrategyPerf {
+        execution_mode: String,
+        lag_threshold_pct: f64,
+        decision_p95_us: u64,
+        intents_per_sec: u64,
+        fills_per_sec: u64,
+        lag_triggers: u64,
+        halted: bool,
     },
 }
 
@@ -218,6 +252,18 @@ impl RuntimeEvent {
             ts: snapshot.ts,
         }
     }
+
+    pub fn strategy_perf(summary: StrategyPerfSummary) -> Self {
+        Self::StrategyPerf {
+            execution_mode: summary.execution_mode,
+            lag_threshold_pct: summary.lag_threshold_pct,
+            decision_p95_us: summary.decision_p95_us,
+            intents_per_sec: summary.intents_per_sec,
+            fills_per_sec: summary.fills_per_sec,
+            lag_triggers: summary.lag_triggers,
+            halted: summary.halted,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -229,6 +275,7 @@ pub struct AppState {
     discovered_markets: Arc<RwLock<Vec<DiscoveredMarket>>>,
     portfolio_summary: Arc<RwLock<PortfolioSummary>>,
     price_snapshot: Arc<RwLock<PriceSnapshot>>,
+    strategy_perf_summary: Arc<RwLock<StrategyPerfSummary>>,
 }
 
 impl Default for AppState {
@@ -242,6 +289,7 @@ impl Default for AppState {
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
             price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
+            strategy_perf_summary: Arc::new(RwLock::new(StrategyPerfSummary::default())),
         }
     }
 }
@@ -308,6 +356,13 @@ impl AppState {
             .clone()
     }
 
+    pub fn strategy_perf_summary(&self) -> StrategyPerfSummary {
+        self.strategy_perf_summary
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
     pub fn set_feed_source_counts(&self, source_counts: Vec<SourceCount>) {
         *self
             .source_counts
@@ -336,6 +391,13 @@ impl AppState {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = snapshot;
     }
 
+    pub fn set_strategy_perf_summary(&self, summary: StrategyPerfSummary) {
+        *self
+            .strategy_perf_summary
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = summary;
+    }
+
     #[cfg(test)]
     pub(crate) fn with_next_run_id_for_test(next_run_id: u64) -> Self {
         let (events_tx, _) = broadcast::channel(256);
@@ -347,6 +409,7 @@ impl AppState {
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
             price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
+            strategy_perf_summary: Arc::new(RwLock::new(StrategyPerfSummary::default())),
         }
     }
 
@@ -361,6 +424,7 @@ impl AppState {
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
             price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
+            strategy_perf_summary: Arc::new(RwLock::new(StrategyPerfSummary::default())),
         }
     }
 
@@ -379,6 +443,7 @@ impl AppState {
             discovered_markets: Arc::new(RwLock::new(discovered_markets)),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
             price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
+            strategy_perf_summary: Arc::new(RwLock::new(StrategyPerfSummary::default())),
         }
     }
 }
@@ -389,6 +454,7 @@ mod tests {
 
     use super::{
         AppState, DiscoveredMarket, FeedMode, PortfolioSummary, PriceSnapshot, SourceCount,
+        StrategyPerfSummary,
     };
 
     #[test]
@@ -484,5 +550,23 @@ mod tests {
         assert_eq!(snapshot.polymarket_yes_ask, Some(0.51));
         assert_eq!(snapshot.polymarket_yes_mid, Some(0.5));
         assert_eq!(snapshot.ts, 10);
+
+        state.set_strategy_perf_summary(StrategyPerfSummary {
+            execution_mode: "paper".to_owned(),
+            lag_threshold_pct: 0.3,
+            decision_p95_us: 88,
+            intents_per_sec: 1100,
+            fills_per_sec: 700,
+            lag_triggers: 10,
+            halted: false,
+        });
+        let perf = state.strategy_perf_summary();
+        assert_eq!(perf.execution_mode, "paper");
+        assert_eq!(perf.lag_threshold_pct, 0.3);
+        assert_eq!(perf.decision_p95_us, 88);
+        assert_eq!(perf.intents_per_sec, 1100);
+        assert_eq!(perf.fills_per_sec, 700);
+        assert_eq!(perf.lag_triggers, 10);
+        assert!(!perf.halted);
     }
 }

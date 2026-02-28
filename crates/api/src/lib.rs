@@ -81,6 +81,17 @@ mod tests {
         ts: u64,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct StrategyPerfResponse {
+        execution_mode: String,
+        lag_threshold_pct: f64,
+        decision_p95_us: u64,
+        intents_per_sec: u64,
+        fills_per_sec: u64,
+        lag_triggers: u64,
+        halted: bool,
+    }
+
     async fn start_run_request(app: axum::Router) -> StartRunResult {
         let response = app
             .oneshot(Request::post("/runs").body(Body::empty()).unwrap())
@@ -309,6 +320,33 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_strategy_perf_returns_latency_and_throughput() {
+        let state = AppState::new();
+        state.set_strategy_perf_summary(crate::state::StrategyPerfSummary {
+            execution_mode: "paper".to_owned(),
+            lag_threshold_pct: 0.3,
+            decision_p95_us: 84,
+            intents_per_sec: 1200,
+            fills_per_sec: 840,
+            lag_triggers: 15,
+            halted: false,
+        });
+        let app = routes::router(state);
+
+        let response = send_get(&app, "/strategy/perf").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: StrategyPerfResponse = parse_json(response).await;
+        assert_eq!(payload.execution_mode, "paper");
+        assert_eq!(payload.lag_threshold_pct, 0.3);
+        assert_eq!(payload.decision_p95_us, 84);
+        assert_eq!(payload.intents_per_sec, 1200);
+        assert_eq!(payload.fills_per_sec, 840);
+        assert_eq!(payload.lag_triggers, 15);
+        assert!(!payload.halted);
+    }
+
+    #[tokio::test]
     async fn post_runs_returns_internal_server_error_on_run_id_overflow() {
         let app = routes::router(AppState::with_next_run_id_for_test(u64::MAX));
 
@@ -516,5 +554,30 @@ mod tests {
         assert_eq!(msg["polymarket_yes_ask"].as_f64(), Some(0.51));
         assert_eq!(msg["polymarket_yes_mid"].as_f64(), Some(0.50));
         assert_eq!(msg["ts"].as_u64(), Some(901));
+    }
+
+    #[tokio::test]
+    async fn websocket_emits_strategy_perf_event_payload() {
+        let msg = next_ws_json_for_event(RuntimeEvent::strategy_perf(
+            crate::state::StrategyPerfSummary {
+                execution_mode: "paper".to_owned(),
+                lag_threshold_pct: 0.3,
+                decision_p95_us: 76,
+                intents_per_sec: 1400,
+                fills_per_sec: 990,
+                lag_triggers: 22,
+                halted: false,
+            },
+        ))
+        .await;
+
+        assert_eq!(msg["event_type"], "strategy_perf");
+        assert_eq!(msg["execution_mode"], "paper");
+        assert_eq!(msg["lag_threshold_pct"].as_f64(), Some(0.3));
+        assert_eq!(msg["decision_p95_us"].as_u64(), Some(76));
+        assert_eq!(msg["intents_per_sec"].as_u64(), Some(1400));
+        assert_eq!(msg["fills_per_sec"].as_u64(), Some(990));
+        assert_eq!(msg["lag_triggers"].as_u64(), Some(22));
+        assert_eq!(msg["halted"].as_bool(), Some(false));
     }
 }

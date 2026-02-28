@@ -79,6 +79,29 @@ impl RiskState {
         Ok(())
     }
 
+    pub fn check_per_trade_risk(
+        &self,
+        per_trade_risk_fraction: f64,
+        trade_risk_amount: f64,
+    ) -> Result<(), StrategyError> {
+        if !per_trade_risk_fraction.is_finite()
+            || per_trade_risk_fraction <= 0.0
+            || per_trade_risk_fraction > 1.0
+        {
+            return Err(StrategyError::InvalidPerTradeRiskPct);
+        }
+        if !trade_risk_amount.is_finite() || trade_risk_amount < 0.0 {
+            return Err(StrategyError::InvalidTradeRiskAmount);
+        }
+
+        let max_trade_risk = self.starting_equity * per_trade_risk_fraction;
+        if trade_risk_amount > max_trade_risk {
+            return Err(StrategyError::PerTradeRiskCapExceeded);
+        }
+
+        Ok(())
+    }
+
     fn exposure_cap_amount(&self) -> f64 {
         self.starting_equity * self.daily_loss_cap_pct
     }
@@ -209,5 +232,23 @@ mod tests {
             RiskState::new(100_000.0, f64::INFINITY),
             Err(StrategyError::InvalidDailyLossCapPct)
         );
+    }
+
+    #[test]
+    fn rejects_trade_exceeding_per_trade_risk_budget() {
+        let risk = RiskState::new(10_000.0, 0.02).expect("valid risk state");
+
+        let decision = risk.check_per_trade_risk(0.005, 60.0);
+
+        assert_eq!(decision, Err(StrategyError::PerTradeRiskCapExceeded));
+    }
+
+    #[test]
+    fn allows_trade_within_per_trade_risk_budget() {
+        let risk = RiskState::new(10_000.0, 0.02).expect("valid risk state");
+
+        let decision = risk.check_per_trade_risk(0.005, 40.0);
+
+        assert_eq!(decision, Ok(()));
     }
 }

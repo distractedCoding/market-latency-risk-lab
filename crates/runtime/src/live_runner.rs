@@ -1,5 +1,5 @@
 use crate::events::{RuntimeEvent, RuntimeStage};
-use crate::live::{BtcMedianTick, PolymarketQuoteTick};
+use crate::live::{detect_lag, BtcMedianTick, PolymarketQuoteTick};
 use crate::paper_exec::{paper_fill_buy, paper_fill_sell};
 use strategy::{live_signal, RiskState, Signal};
 
@@ -78,6 +78,88 @@ pub fn run_paper_live_once(tick: u64, joined: &JoinedLiveInputs) -> Vec<RuntimeE
     events
 }
 
+pub fn run_paper_live_once_with_lag(
+    tick: u64,
+    joined: &JoinedLiveInputs,
+    fair_yes_px: f64,
+    lag_threshold_pct: f64,
+    per_trade_risk_fraction: f64,
+    starting_equity: f64,
+    daily_loss_cap_fraction: f64,
+) -> Vec<RuntimeEvent> {
+    let lag_signal = match detect_lag(
+        &joined.quote_tick.market_slug,
+        joined.quote_tick.mid_yes,
+        fair_yes_px,
+        lag_threshold_pct,
+    ) {
+        Ok(signal) => signal,
+        Err(_) => return vec![],
+    };
+
+    if !lag_signal.triggered {
+        return vec![];
+    }
+
+    let signal_action = if lag_signal.divergence_pct > 0.0 {
+        Signal::Buy
+    } else {
+        Signal::Sell
+    };
+
+    let mut events = vec![RuntimeEvent::new(tick, RuntimeStage::PaperIntentCreated)];
+
+    let signed_exposure_delta =
+        signed_exposure_delta(signal_action, ORDER_QTY, joined.quote_tick.mid_yes);
+    let current_market_exposure = current_market_exposure(signal_action);
+
+    let risk_state = match RiskState::new(starting_equity, daily_loss_cap_fraction) {
+        Ok(state) => state,
+        Err(_) => return events,
+    };
+
+    if risk_state
+        .check_market_exposure(
+            &joined.quote_tick.market_slug,
+            current_market_exposure,
+            signed_exposure_delta,
+        )
+        .is_err()
+    {
+        return events;
+    }
+
+    let trade_risk_amount = joined.quote_tick.mid_yes * ORDER_QTY;
+    if risk_state
+        .check_per_trade_risk(per_trade_risk_fraction, trade_risk_amount)
+        .is_err()
+    {
+        return events;
+    }
+
+    let fill_result = match signal_action {
+        Signal::Buy => paper_fill_buy(
+            joined.quote_tick.best_yes_ask,
+            ORDER_QTY,
+            ORDER_SLIPPAGE_BPS,
+            ORDER_FEE_BPS,
+        ),
+        Signal::Sell => paper_fill_sell(
+            joined.quote_tick.best_yes_bid,
+            ORDER_QTY,
+            ORDER_SLIPPAGE_BPS,
+            ORDER_FEE_BPS,
+        ),
+        Signal::Hold => return vec![],
+    };
+
+    if fill_result.is_ok() {
+        events.push(RuntimeEvent::new(tick, RuntimeStage::PaperFillRecorded));
+    }
+
+    events
+}
+
 fn derive_prediction_price(mid_yes: f64, btc_spread_signal: f64) -> f64 {
     (mid_yes + (btc_spread_signal * BTC_SPREAD_TO_PRICE_COEFF)).clamp(0.0, 1.0)
 }
@@ -133,6 +215,38 @@ mod tests {
     #[test]
     fn run_paper_live_once_emits_no_events_for_invalid_signal_input() {
         let out = run_paper_live_once(42, &joined_inputs_with_zero_mid_price(42));
+
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn emits_intent_when_lag_exceeds_threshold() {
+        let out = super::run_paper_live_once_with_lag(
+            42,
+            &joined_inputs_for_hold_signal(42),
+            0.502,
+            0.3,
+            0.005,
+            10_000.0,
+            0.02,
+        );
+
+        assert!(out
+            .iter()
+            .any(|event| event.stage == RuntimeStage::PaperIntentCreated));
+    }
+
+    #[test]
+    fn emits_no_intent_when_lag_below_threshold() {
+        let out = super::run_paper_live_once_with_lag(
+            42,
+            &joined_inputs_for_hold_signal(42),
+            0.501,
+            0.3,
+            0.005,
+            10_000.0,
+            0.02,
+        );
 
         assert!(out.is_empty());
     }

@@ -17,7 +17,10 @@ pub enum StrategyError {
     InvalidPositionSize,
     InvalidStartingEquity,
     InvalidDailyLossCapPct,
+    InvalidPerTradeRiskPct,
+    InvalidTradeRiskAmount,
     MarketExposureCapExceeded,
+    PerTradeRiskCapExceeded,
     NonFinitePnl,
 }
 

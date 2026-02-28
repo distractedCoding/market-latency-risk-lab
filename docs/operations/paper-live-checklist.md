@@ -12,6 +12,12 @@ Safety boundary is unchanged:
 - Confirm mode intent: `LAB_SERVER_MODE` is unset (defaults to `paper-live`) or explicitly set to `paper-live`.
 - Confirm bind address: `LAB_SERVER_ADDR` is valid for the host (default `0.0.0.0:8080`).
 - Confirm replay output path: `LAB_SERVER_REPLAY_OUTPUT` is writable (default `artifacts/replay.csv`).
+- Confirm execution mode: `LAB_EXECUTION_MODE` is `paper` unless explicitly running gated live shadow mode.
+- Confirm feature gate: `LAB_LIVE_FEATURE_ENABLED` is `false` unless intentionally enabling live path checks.
+- Confirm risk and lag defaults (or overrides):
+  - `LAB_LAG_THRESHOLD_PCT` (default `0.3`)
+  - `LAB_RISK_PER_TRADE_PCT` (default `0.5`)
+  - `LAB_DAILY_LOSS_CAP_PCT` (default `2.0`)
 - Run test gate from repo root:
 
 ```bash
@@ -49,13 +55,26 @@ curl -fsS http://127.0.0.1:8080/feed/health
 
 Expected JSON includes:
 - `"mode":"paper-live"`
-- `"source_counts"` (may be empty in the current build until ingest-to-API wiring is connected)
+- `"source_counts"`
+
+Validate strategy telemetry:
+
+```bash
+curl -fsS http://127.0.0.1:8080/strategy/perf
+```
+
+Expected JSON includes:
+- `"execution_mode"`
+- `"lag_threshold_pct"`
+- `"decision_p95_us"`
+- `"intents_per_sec"` and `"fills_per_sec"`
+- `"halted"`
 
 ## 4. Runtime Monitoring
 
 - Watch logs for mode drift or startup retries.
 - Confirm replay file exists and updates at `LAB_SERVER_REPLAY_OUTPUT`.
-- `source_counts` may remain empty in the current build while ingest-to-API wiring is still in progress.
+- Monitor `strategy/perf` for decision-latency drift, low throughput, or `halted=true`.
 
 ## 5. Stop Conditions
 
