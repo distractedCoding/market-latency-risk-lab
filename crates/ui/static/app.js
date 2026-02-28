@@ -5,6 +5,8 @@ const feedHealthEl = document.getElementById("feed-health");
 const paperFillsCountEl = document.getElementById("paper-fills-count");
 const paperFillsLastEl = document.getElementById("paper-fills-last");
 let paperFillCount = 0;
+const fetchFeedHealthIntervalMs = 5000;
+let feedHealthPollInFlight = false;
 
 function setStatus(text, className) {
   statusEl.textContent = text;
@@ -34,16 +36,31 @@ function updateFeedHealth(data) {
     return;
   }
 
-  const status = data.status || data.health || data.state;
-  const mode = data.mode || "?";
-  const source = data.source || data.feed_source || "?";
-  if (!status && mode === "?" && source === "?") {
+  const mode = typeof data.mode === "string" ? data.mode : "?";
+  const sourceCounts = Array.isArray(data.source_counts) ? data.source_counts : [];
+  const validSourceCounts = sourceCounts.filter((entry) => {
+    return (
+      entry &&
+      typeof entry.source === "string" &&
+      entry.source.length > 0 &&
+      Number.isFinite(entry.count)
+    );
+  });
+
+  const totalSources = validSourceCounts.length;
+  const topSource = validSourceCounts.reduce((best, current) => {
+    if (!best || current.count > best.count) {
+      return current;
+    }
+    return best;
+  }, null);
+
+  if (topSource) {
+    feedHealthEl.textContent = `mode: ${mode} | sources: ${totalSources} | top source: ${topSource.source} (${topSource.count})`;
     return;
   }
 
-  const lagMs = Number.isFinite(data.lag_ms) ? ` (${data.lag_ms} ms lag)` : "";
-  const statusLabel = status ? `${status}${lagMs}` : "unknown";
-  feedHealthEl.textContent = `${statusLabel} | mode: ${mode} | source: ${source}`;
+  feedHealthEl.textContent = `mode: ${mode} | sources: ${totalSources}`;
 }
 
 function updatePaperFills(data) {
@@ -105,10 +122,11 @@ function connect() {
 }
 
 async function fetchFeedHealth() {
-  if (!feedHealthEl) {
+  if (!feedHealthEl || feedHealthPollInFlight) {
     return;
   }
 
+  feedHealthPollInFlight = true;
   try {
     const response = await fetch("/feed/health");
     if (!response.ok) {
@@ -119,8 +137,11 @@ async function fetchFeedHealth() {
     if (payload && typeof payload === "object") {
       updateFeedHealth(payload);
     }
-  } catch {}
+  } catch {} finally {
+    feedHealthPollInFlight = false;
+  }
 }
 
 fetchFeedHealth();
+window.setInterval(fetchFeedHealth, fetchFeedHealthIntervalMs);
 connect();

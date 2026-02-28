@@ -33,4 +33,20 @@ mod tests {
         assert!(html.contains("Feed Health"));
         assert!(html.contains("Paper Fills"));
     }
+
+    #[test]
+    fn app_js_renders_feed_health_from_mode_and_source_counts() {
+        let js = app_js();
+
+        assert!(js.contains("source_counts"));
+        assert!(js.contains("top source"));
+    }
+
+    #[test]
+    fn app_js_polls_feed_health_periodically() {
+        let js = app_js();
+
+        assert!(js.contains("window.setInterval"));
+        assert!(js.contains("fetchFeedHealthIntervalMs"));
+    }
 }
