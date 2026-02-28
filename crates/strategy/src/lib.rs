@@ -122,10 +122,48 @@ mod tests {
 
     #[test]
     fn halts_when_daily_loss_cap_is_breached() {
-        let mut risk = RiskState::new(100_000.0, 2.0).expect("valid risk state");
+        let mut risk = RiskState::new(100_000.0, 0.02).expect("valid risk state");
 
         risk.apply_realized_pnl(-2_001.0).expect("valid pnl update");
 
         assert!(risk.is_halted());
+    }
+
+    #[test]
+    fn halts_when_daily_loss_reaches_exact_cap_boundary() {
+        let mut risk = RiskState::new(100_000.0, 0.02).expect("valid risk state");
+
+        risk.apply_realized_pnl(-2_000.0).expect("valid pnl update");
+
+        assert!(risk.is_halted());
+    }
+
+    #[test]
+    fn allows_manual_kill_switch_trigger() {
+        let mut risk = RiskState::new(100_000.0, 0.02).expect("valid risk state");
+
+        risk.trigger_kill_switch();
+
+        assert!(risk.is_halted());
+    }
+
+    #[test]
+    fn rejects_invalid_daily_loss_cap_fraction_values() {
+        assert_eq!(
+            RiskState::new(100_000.0, -0.01),
+            Err(StrategyError::InvalidDailyLossCapPct)
+        );
+        assert_eq!(
+            RiskState::new(100_000.0, 1.01),
+            Err(StrategyError::InvalidDailyLossCapPct)
+        );
+        assert_eq!(
+            RiskState::new(100_000.0, f64::NAN),
+            Err(StrategyError::InvalidDailyLossCapPct)
+        );
+        assert_eq!(
+            RiskState::new(100_000.0, f64::INFINITY),
+            Err(StrategyError::InvalidDailyLossCapPct)
+        );
     }
 }

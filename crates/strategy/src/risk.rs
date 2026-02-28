@@ -13,7 +13,7 @@ impl RiskState {
         if !starting_equity.is_finite() || starting_equity <= 0.0 {
             return Err(StrategyError::InvalidStartingEquity);
         }
-        if !daily_loss_cap_pct.is_finite() || daily_loss_cap_pct < 0.0 {
+        if !daily_loss_cap_pct.is_finite() || !(0.0..=1.0).contains(&daily_loss_cap_pct) {
             return Err(StrategyError::InvalidDailyLossCapPct);
         }
 
@@ -32,12 +32,16 @@ impl RiskState {
 
         self.realized_pnl += pnl_delta;
 
-        let cap_amount = self.starting_equity * (self.daily_loss_cap_pct / 100.0);
-        if self.realized_pnl < -cap_amount {
+        let cap_amount = self.starting_equity * self.daily_loss_cap_pct;
+        if self.realized_pnl <= -cap_amount {
             self.halted = true;
         }
 
         Ok(())
+    }
+
+    pub fn trigger_kill_switch(&mut self) {
+        self.halted = true;
     }
 
     pub fn is_halted(&self) -> bool {
