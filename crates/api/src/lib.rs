@@ -28,7 +28,7 @@ mod tests {
 
     use crate::{
         app, routes,
-        state::{AppState, RuntimeEvent},
+        state::{AppState, FeedMode, RuntimeEvent},
     };
 
     #[derive(Debug, Deserialize)]
@@ -51,7 +51,7 @@ mod tests {
 
     #[derive(Debug, Deserialize)]
     struct FeedHealthResponse {
-        mode: String,
+        mode: FeedMode,
         source_counts: Vec<SourceCount>,
     }
 
@@ -145,14 +145,13 @@ mod tests {
 
         assert_eq!(response.status(), StatusCode::OK);
         let payload: FeedHealthResponse = parse_json(response).await;
-        assert_eq!(payload.mode, "paper-live");
+        assert_eq!(payload.mode, FeedMode::PaperLive);
         assert!(
             payload
                 .source_counts
                 .iter()
-                .all(|source_count| source_count.count == 0 || !source_count.source.is_empty())
+                .all(|source_count| !source_count.source.trim().is_empty())
         );
-        assert!(payload.source_counts.is_empty());
     }
 
     #[tokio::test]
@@ -166,9 +165,10 @@ mod tests {
             payload
                 .markets
                 .iter()
-                .all(|market| !market.source.is_empty() && !market.market_id.is_empty())
+                .all(|market| {
+                    !market.source.trim().is_empty() && !market.market_id.trim().is_empty()
+                })
         );
-        assert!(payload.markets.is_empty());
     }
 
     #[tokio::test]

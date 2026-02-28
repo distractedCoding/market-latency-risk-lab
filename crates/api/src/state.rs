@@ -5,7 +5,7 @@ use std::sync::{
 
 use tokio::sync::broadcast;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FeedMode {
     PaperLive,
@@ -73,6 +73,7 @@ impl RuntimeEvent {
 pub struct AppState {
     next_run_id: Arc<AtomicU64>,
     events_tx: broadcast::Sender<RuntimeEvent>,
+    feed_mode: FeedMode,
 }
 
 impl Default for AppState {
@@ -81,6 +82,7 @@ impl Default for AppState {
         Self {
             next_run_id: Arc::new(AtomicU64::new(0)),
             events_tx,
+            feed_mode: FeedMode::PaperLive,
         }
     }
 }
@@ -114,7 +116,7 @@ impl AppState {
 
     pub fn feed_health(&self) -> FeedHealthResponse {
         FeedHealthResponse {
-            mode: FeedMode::PaperLive,
+            mode: self.feed_mode,
             source_counts: Vec::new(),
         }
     }
@@ -131,6 +133,17 @@ impl AppState {
         Self {
             next_run_id: Arc::new(AtomicU64::new(next_run_id)),
             events_tx,
+            feed_mode: FeedMode::PaperLive,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_feed_mode_for_test(feed_mode: FeedMode) -> Self {
+        let (events_tx, _) = broadcast::channel(256);
+        Self {
+            next_run_id: Arc::new(AtomicU64::new(0)),
+            events_tx,
+            feed_mode,
         }
     }
 }
@@ -139,7 +152,7 @@ impl AppState {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use super::AppState;
+    use super::{AppState, FeedMode};
 
     #[test]
     fn start_run_returns_overflow_error_at_u64_max() {
@@ -147,5 +160,12 @@ mod tests {
         state.next_run_id.store(u64::MAX, Ordering::Relaxed);
 
         assert!(state.start_run().is_err());
+    }
+
+    #[test]
+    fn feed_health_returns_configured_mode() {
+        let state = AppState::with_feed_mode_for_test(FeedMode::Sim);
+
+        assert_eq!(state.feed_health().mode, FeedMode::Sim);
     }
 }
