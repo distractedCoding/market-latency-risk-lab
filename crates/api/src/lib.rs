@@ -109,6 +109,57 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_root_serves_dashboard_shell() {
+        let app = app();
+
+        let response = app
+            .oneshot(Request::get("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(content_type, Some("text/html; charset=utf-8"));
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let html = std::str::from_utf8(&body).unwrap();
+        assert!(html.contains("/static/styles.css"));
+        assert!(html.contains("/static/app.js"));
+        assert!(html.contains("/ws/events"));
+    }
+
+    #[tokio::test]
+    async fn get_static_assets_serves_css_and_js() {
+        let app = app();
+
+        let css_response = app
+            .clone()
+            .oneshot(Request::get("/static/styles.css").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(css_response.status(), StatusCode::OK);
+        let css_type = css_response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(css_type, Some("text/css; charset=utf-8"));
+
+        let js_response = app
+            .oneshot(Request::get("/static/app.js").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(js_response.status(), StatusCode::OK);
+        let js_type = js_response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok());
+        assert_eq!(js_type, Some("application/javascript; charset=utf-8"));
+    }
+
+    #[tokio::test]
     async fn websocket_streams_events_channel() {
         let state = AppState::new();
         let app = routes::router(state);

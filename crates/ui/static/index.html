@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Market Latency Risk Lab</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="shell-header">
+      <h1>Market Latency Risk Lab</h1>
+      <p>Live stream from <code>/ws/events</code></p>
+    </header>
+
+    <section class="panel-grid">
+      <article class="panel">
+        <h2>Connection</h2>
+        <p id="connection-status" class="pill state-pending">Connecting...</p>
+      </article>
+      <article class="panel">
+        <h2>Last Event</h2>
+        <p id="last-event" class="mono">Waiting for data...</p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>Event Feed</h2>
+      <ul id="event-feed" class="feed"></ul>
+    </section>
+  </main>
+
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 use axum::{
     extract::State,
     http::{header, StatusCode},
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::{get, post},
     Json,
     Router,
@@ -15,9 +15,30 @@ use crate::{
 
 pub fn router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(dashboard_index))
         .route("/runs", post(start_run))
+        .route("/static/styles.css", get(dashboard_styles))
+        .route("/static/app.js", get(dashboard_script))
         .route("/ws/events", get(ws::events_socket))
         .with_state(state)
+}
+
+async fn dashboard_index() -> Html<&'static str> {
+    Html(ui::index_html())
+}
+
+async fn dashboard_styles() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        ui::styles_css(),
+    )
+}
+
+async fn dashboard_script() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        ui::app_js(),
+    )
 }
 
 #[derive(Debug, Serialize)]
