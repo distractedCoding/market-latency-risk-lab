@@ -1,2 +1,4 @@
 .venv/
 .worktrees/
+target/
+__pycache__/
