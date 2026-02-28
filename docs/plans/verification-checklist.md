@@ -4,7 +4,7 @@ Use this checklist before opening a pull request for the Rust workspace.
 
 ## Required Commands
 
-1. `PATH="$HOME/.cargo/bin:$PATH" cargo fmt --check`
+1. `PATH="$HOME/.cargo/bin:$PATH" cargo fmt --all -- --check`
    - Expected: command exits with status 0 and no formatting diffs are reported.
 
 2. `PATH="$HOME/.cargo/bin:$PATH" cargo clippy --workspace -- -D warnings`
@@ -13,5 +13,8 @@ Use this checklist before opening a pull request for the Rust workspace.
 3. `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace`
    - Expected: command exits with status 0 and all tests pass.
 
-4. `PATH="$HOME/.cargo/bin:$PATH" cargo bench -p runtime --no-fail-fast`
+4. `PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace paper_live`
+   - Expected: command exits with status 0 and paper-live-focused verification tests pass across workspace crates.
+
+5. `PATH="$HOME/.cargo/bin:$PATH" cargo bench -p runtime --no-fail-fast`
    - Expected: command exits with status 0 and runtime benchmarks complete without failures.

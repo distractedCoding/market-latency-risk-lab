@@ -18,6 +18,8 @@ jobs:
           cargo fmt --all -- --check
           cargo clippy --workspace -- -D warnings
           cargo test --workspace
+      - name: Paper Live Integration Verify
+        run: cargo test --workspace paper_live
       - name: Runtime Benchmark Check
         run: cargo bench -p runtime --no-fail-fast
       - name: Lab server smoke check
