@@ -15,6 +15,7 @@ pub struct Config {
 #[derive(Debug)]
 pub enum ConfigError {
     InvalidListenAddr(AddrParseError),
+    InvalidReplayOutputPath,
     NonUnicodeListenAddr,
     NonUnicodeReplayOutput,
 }
@@ -24,6 +25,9 @@ impl fmt::Display for ConfigError {
         match self {
             Self::InvalidListenAddr(err) => {
                 write!(f, "LAB_SERVER_ADDR is not a valid socket address: {err}")
+            }
+            Self::InvalidReplayOutputPath => {
+                write!(f, "LAB_SERVER_REPLAY_OUTPUT must not be empty or whitespace")
             }
             Self::NonUnicodeListenAddr => {
                 write!(f, "LAB_SERVER_ADDR contains non-unicode data")
@@ -39,6 +43,7 @@ impl std::error::Error for ConfigError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::InvalidListenAddr(err) => Some(err),
+            Self::InvalidReplayOutputPath => None,
             Self::NonUnicodeListenAddr => None,
             Self::NonUnicodeReplayOutput => None,
         }
@@ -58,7 +63,12 @@ impl Config {
         };
 
         let replay_output_path = match env::var("LAB_SERVER_REPLAY_OUTPUT") {
-            Ok(value) => value,
+            Ok(value) => {
+                if value.trim().is_empty() {
+                    return Err(ConfigError::InvalidReplayOutputPath);
+                }
+                value
+            }
             Err(env::VarError::NotPresent) => DEFAULT_REPLAY_OUTPUT_PATH.to_owned(),
             Err(env::VarError::NotUnicode(_)) => {
                 return Err(ConfigError::NonUnicodeReplayOutput);
@@ -197,5 +207,25 @@ mod tests {
         let err = Config::from_env().unwrap_err();
 
         assert!(matches!(err, ConfigError::NonUnicodeReplayOutput));
+    }
+
+    #[test]
+    fn returns_error_for_empty_replay_output_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvVarGuard::set(ENV_REPLAY_KEY, "");
+
+        let err = Config::from_env().unwrap_err();
+
+        assert!(matches!(err, ConfigError::InvalidReplayOutputPath));
+    }
+
+    #[test]
+    fn returns_error_for_whitespace_replay_output_override() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _guard = EnvVarGuard::set(ENV_REPLAY_KEY, "   ");
+
+        let err = Config::from_env().unwrap_err();
+
+        assert!(matches!(err, ConfigError::InvalidReplayOutputPath));
     }
 }
