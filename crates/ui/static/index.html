@@ -34,6 +34,46 @@
     </section>
 
     <section class="panel-grid">
+      <article class="panel prices-panel">
+        <div class="panel-header-row">
+          <h2>Live Prices</h2>
+          <p id="prices-updated" class="mono">Waiting for snapshot...</p>
+        </div>
+        <p id="price-poly-market" class="mono price-market">market: --</p>
+        <div class="price-grid" aria-label="live prices">
+          <div class="price-row">
+            <p class="price-label">Coinbase BTC/USD</p>
+            <p id="price-coinbase" class="price-value">--</p>
+            <p id="trend-coinbase" class="trend-pill trend-flat">flat</p>
+          </div>
+          <div class="price-row">
+            <p class="price-label">Binance BTC/USDT</p>
+            <p id="price-binance" class="price-value">--</p>
+            <p id="trend-binance" class="trend-pill trend-flat">flat</p>
+          </div>
+          <div class="price-row">
+            <p class="price-label">Kraken XBT/USD</p>
+            <p id="price-kraken" class="price-value">--</p>
+            <p id="trend-kraken" class="trend-pill trend-flat">flat</p>
+          </div>
+          <div class="price-row">
+            <p class="price-label">Polymarket YES Mid</p>
+            <p id="price-poly-mid" class="price-value">--</p>
+            <p id="trend-poly-mid" class="trend-pill trend-flat">flat</p>
+          </div>
+          <div class="price-row">
+            <p class="price-label">Polymarket YES Bid</p>
+            <p id="price-poly-bid" class="price-value">--</p>
+            <p class="trend-pill trend-static">bid</p>
+          </div>
+          <div class="price-row">
+            <p class="price-label">Polymarket YES Ask</p>
+            <p id="price-poly-ask" class="price-value">--</p>
+            <p class="trend-pill trend-static">ask</p>
+          </div>
+        </div>
+      </article>
+
       <article class="panel chart-panel">
         <div class="panel-header-row">
           <h2>Equity Curve</h2>

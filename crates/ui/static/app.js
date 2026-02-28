@@ -12,14 +12,35 @@ const totalFillsEl = document.getElementById("total-fills");
 const equityLatestEl = document.getElementById("equity-latest");
 const equityChartEl = document.getElementById("equity-chart");
 
+const pricesUpdatedEl = document.getElementById("prices-updated");
+const pricePolyMarketEl = document.getElementById("price-poly-market");
+const priceCoinbaseEl = document.getElementById("price-coinbase");
+const priceBinanceEl = document.getElementById("price-binance");
+const priceKrakenEl = document.getElementById("price-kraken");
+const pricePolyMidEl = document.getElementById("price-poly-mid");
+const pricePolyBidEl = document.getElementById("price-poly-bid");
+const pricePolyAskEl = document.getElementById("price-poly-ask");
+
+const trendCoinbaseEl = document.getElementById("trend-coinbase");
+const trendBinanceEl = document.getElementById("trend-binance");
+const trendKrakenEl = document.getElementById("trend-kraken");
+const trendPolyMidEl = document.getElementById("trend-poly-mid");
+
 const fetchFeedHealthIntervalMs = 5000;
 const fetchPortfolioIntervalMs = 3000;
+const fetchPriceSnapshotIntervalMs = 3000;
+const priceFreshnessCheckIntervalMs = 1500;
+const stalePriceThresholdMs = 10000;
 const maxEquityPoints = 180;
 
 let paperFillCount = 0;
 let feedHealthPollInFlight = false;
 let portfolioPollInFlight = false;
+let priceSnapshotPollInFlight = false;
+let lastPriceUpdateAtMs = 0;
+let lastPriceStatusLabel = "Waiting for snapshot...";
 const equityPoints = [];
+const lastDirectionalValues = new Map();
 
 function setStatus(text, className) {
   if (!statusEl) {
@@ -51,6 +72,13 @@ function maybeParseJson(raw) {
   }
 }
 
+function asFiniteNumber(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+  return value;
+}
+
 function formatMoney(value) {
   if (!Number.isFinite(value)) {
     return "$0.00";
@@ -64,6 +92,153 @@ function formatFixed(value, digits) {
     return "0.00";
   }
   return value.toFixed(digits);
+}
+
+function formatUsd(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  return `$${value.toFixed(2)}`;
+}
+
+function formatProbability(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
+  }
+  return `${value.toFixed(3)} (${(value * 100).toFixed(1)}%)`;
+}
+
+function setTrend(trendEl, direction) {
+  if (!trendEl) {
+    return;
+  }
+  trendEl.textContent = direction;
+  trendEl.className = `trend-pill trend-${direction}`;
+}
+
+function setDirectionalValue(key, value, valueEl, trendEl, formatter, tolerance) {
+  if (!valueEl || !trendEl) {
+    return;
+  }
+
+  if (!Number.isFinite(value)) {
+    valueEl.textContent = "--";
+    valueEl.classList.remove("value-up", "value-down", "pulse-up", "pulse-down");
+    setTrend(trendEl, "flat");
+    return;
+  }
+
+  valueEl.textContent = formatter(value);
+
+  const previous = lastDirectionalValues.get(key);
+  let direction = "flat";
+  if (Number.isFinite(previous)) {
+    if (value > previous + tolerance) {
+      direction = "up";
+    } else if (value < previous - tolerance) {
+      direction = "down";
+    }
+  }
+
+  setTrend(trendEl, direction);
+  valueEl.classList.remove("value-up", "value-down", "pulse-up", "pulse-down");
+  if (direction === "up") {
+    valueEl.classList.add("value-up", "pulse-up");
+  }
+  if (direction === "down") {
+    valueEl.classList.add("value-down", "pulse-down");
+  }
+  if (direction !== "flat") {
+    window.setTimeout(() => {
+      valueEl.classList.remove("pulse-up", "pulse-down");
+    }, 430);
+  }
+
+  lastDirectionalValues.set(key, value);
+}
+
+function updatePriceFreshnessLabel() {
+  if (!pricesUpdatedEl) {
+    return;
+  }
+
+  if (!lastPriceUpdateAtMs) {
+    pricesUpdatedEl.textContent = "Waiting for snapshot...";
+    pricesUpdatedEl.classList.add("stale");
+    return;
+  }
+
+  const ageMs = Date.now() - lastPriceUpdateAtMs;
+  if (ageMs > stalePriceThresholdMs) {
+    const staleSeconds = Math.floor(ageMs / 1000);
+    pricesUpdatedEl.textContent = `${lastPriceStatusLabel} | stale ${staleSeconds}s`;
+    pricesUpdatedEl.classList.add("stale");
+    return;
+  }
+
+  pricesUpdatedEl.textContent = lastPriceStatusLabel;
+  pricesUpdatedEl.classList.remove("stale");
+}
+
+function updatePriceSnapshot(snapshot) {
+  const coinbase = asFiniteNumber(snapshot.coinbase_btc_usd);
+  const binance = asFiniteNumber(snapshot.binance_btc_usdt);
+  const kraken = asFiniteNumber(snapshot.kraken_btc_usd);
+  const polyBid = asFiniteNumber(snapshot.polymarket_yes_bid);
+  const polyAsk = asFiniteNumber(snapshot.polymarket_yes_ask);
+  const polyMid = asFiniteNumber(snapshot.polymarket_yes_mid);
+
+  setDirectionalValue(
+    "coinbase",
+    coinbase,
+    priceCoinbaseEl,
+    trendCoinbaseEl,
+    formatUsd,
+    0.01,
+  );
+  setDirectionalValue(
+    "binance",
+    binance,
+    priceBinanceEl,
+    trendBinanceEl,
+    formatUsd,
+    0.01,
+  );
+  setDirectionalValue("kraken", kraken, priceKrakenEl, trendKrakenEl, formatUsd, 0.01);
+  setDirectionalValue(
+    "poly-mid",
+    polyMid,
+    pricePolyMidEl,
+    trendPolyMidEl,
+    formatProbability,
+    0.0005,
+  );
+
+  if (pricePolyBidEl) {
+    pricePolyBidEl.textContent = formatProbability(polyBid);
+  }
+  if (pricePolyAskEl) {
+    pricePolyAskEl.textContent = formatProbability(polyAsk);
+  }
+
+  if (pricePolyMarketEl) {
+    const market =
+      typeof snapshot.polymarket_market_id === "string" && snapshot.polymarket_market_id
+        ? snapshot.polymarket_market_id
+        : "--";
+    pricePolyMarketEl.textContent = `market: ${market}`;
+  }
+
+  const tick = Number.isFinite(snapshot.ts) ? Math.floor(snapshot.ts) : null;
+  const now = new Date();
+  if (tick === null) {
+    lastPriceStatusLabel = `updated ${now.toLocaleTimeString()}`;
+  } else {
+    lastPriceStatusLabel = `tick ${tick} | ${now.toLocaleTimeString()}`;
+  }
+
+  lastPriceUpdateAtMs = Date.now();
+  updatePriceFreshnessLabel();
 }
 
 function updateFeedHealth(data) {
@@ -205,6 +380,10 @@ function updatePortfolioSummary(summary) {
   if (totalFillsEl && Number.isFinite(fills)) {
     totalFillsEl.textContent = String(Math.floor(fills));
   }
+  if (paperFillsCountEl && Number.isFinite(fills)) {
+    paperFillCount = Math.max(paperFillCount, Math.floor(fills));
+    paperFillsCountEl.textContent = String(paperFillCount);
+  }
   if (equityLatestEl) {
     equityLatestEl.textContent = `equity: ${formatFixed(equity, 2)}`;
   }
@@ -231,6 +410,11 @@ function routeTelemetry(rawEvent) {
 
   if (eventType === "portfolio_snapshot") {
     updatePortfolioSummary(parsed);
+    return;
+  }
+
+  if (eventType === "price_snapshot") {
+    updatePriceSnapshot(parsed);
   }
 }
 
@@ -246,7 +430,9 @@ function connect() {
   });
 
   ws.addEventListener("message", (event) => {
-    lastEventEl.textContent = event.data;
+    if (lastEventEl) {
+      lastEventEl.textContent = event.data;
+    }
     pushEvent(event.data);
     routeTelemetry(event.data);
   });
@@ -303,8 +489,35 @@ async function fetchPortfolioSummary() {
   }
 }
 
+async function fetchPriceSnapshot() {
+  if (priceSnapshotPollInFlight) {
+    return;
+  }
+
+  priceSnapshotPollInFlight = true;
+  try {
+    const response = await fetch("/prices/snapshot");
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    if (payload && typeof payload === "object") {
+      updatePriceSnapshot(payload);
+    }
+  } catch {
+  } finally {
+    priceSnapshotPollInFlight = false;
+  }
+}
+
 fetchFeedHealth();
 fetchPortfolioSummary();
+fetchPriceSnapshot();
+updatePriceFreshnessLabel();
+
 window.setInterval(fetchFeedHealth, fetchFeedHealthIntervalMs);
 window.setInterval(fetchPortfolioSummary, fetchPortfolioIntervalMs);
+window.setInterval(fetchPriceSnapshot, fetchPriceSnapshotIntervalMs);
+window.setInterval(updatePriceFreshnessLabel, priceFreshnessCheckIntervalMs);
+
 connect();

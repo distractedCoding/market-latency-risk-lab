@@ -69,6 +69,18 @@ mod tests {
         markets: Vec<DiscoveredMarket>,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct PriceSnapshotResponse {
+        coinbase_btc_usd: Option<f64>,
+        binance_btc_usdt: Option<f64>,
+        kraken_btc_usd: Option<f64>,
+        polymarket_market_id: Option<String>,
+        polymarket_yes_bid: Option<f64>,
+        polymarket_yes_ask: Option<f64>,
+        polymarket_yes_mid: Option<f64>,
+        ts: u64,
+    }
+
     async fn start_run_request(app: axum::Router) -> StartRunResult {
         let response = app
             .oneshot(Request::post("/runs").body(Body::empty()).unwrap())
@@ -268,6 +280,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_prices_snapshot_returns_typed_payload() {
+        let state = AppState::new();
+        state.set_price_snapshot(crate::state::PriceSnapshot {
+            coinbase_btc_usd: Some(64_101.2),
+            binance_btc_usdt: Some(64_100.9),
+            kraken_btc_usd: Some(64_101.0),
+            polymarket_market_id: Some("btc-up-down".to_owned()),
+            polymarket_yes_bid: Some(0.481),
+            polymarket_yes_ask: Some(0.487),
+            polymarket_yes_mid: Some(0.484),
+            ts: 77,
+        });
+        let app = routes::router(state);
+
+        let response = send_get(&app, "/prices/snapshot").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: PriceSnapshotResponse = parse_json(response).await;
+        assert_eq!(payload.coinbase_btc_usd, Some(64_101.2));
+        assert_eq!(payload.binance_btc_usdt, Some(64_100.9));
+        assert_eq!(payload.kraken_btc_usd, Some(64_101.0));
+        assert_eq!(payload.polymarket_market_id.as_deref(), Some("btc-up-down"));
+        assert_eq!(payload.polymarket_yes_bid, Some(0.481));
+        assert_eq!(payload.polymarket_yes_ask, Some(0.487));
+        assert_eq!(payload.polymarket_yes_mid, Some(0.484));
+        assert_eq!(payload.ts, 77);
+    }
+
+    #[tokio::test]
     async fn post_runs_returns_internal_server_error_on_run_id_overflow() {
         let app = routes::router(AppState::with_next_run_id_for_test(u64::MAX));
 
@@ -449,5 +490,31 @@ mod tests {
         assert_eq!(msg["market_id"], "btc-up-down");
         assert_eq!(msg["reason"], "max_market_exposure");
         assert!(msg["requested_qty"].as_f64().is_some());
+    }
+
+    #[tokio::test]
+    async fn websocket_emits_price_snapshot_event_payload() {
+        let msg =
+            next_ws_json_for_event(RuntimeEvent::price_snapshot(crate::state::PriceSnapshot {
+                coinbase_btc_usd: Some(64_122.3),
+                binance_btc_usdt: Some(64_121.9),
+                kraken_btc_usd: Some(64_122.1),
+                polymarket_market_id: Some("btc-march".to_owned()),
+                polymarket_yes_bid: Some(0.49),
+                polymarket_yes_ask: Some(0.51),
+                polymarket_yes_mid: Some(0.50),
+                ts: 901,
+            }))
+            .await;
+
+        assert_eq!(msg["event_type"], "price_snapshot");
+        assert_eq!(msg["coinbase_btc_usd"].as_f64(), Some(64_122.3));
+        assert_eq!(msg["binance_btc_usdt"].as_f64(), Some(64_121.9));
+        assert_eq!(msg["kraken_btc_usd"].as_f64(), Some(64_122.1));
+        assert_eq!(msg["polymarket_market_id"], "btc-march");
+        assert_eq!(msg["polymarket_yes_bid"].as_f64(), Some(0.49));
+        assert_eq!(msg["polymarket_yes_ask"].as_f64(), Some(0.51));
+        assert_eq!(msg["polymarket_yes_mid"].as_f64(), Some(0.50));
+        assert_eq!(msg["ts"].as_u64(), Some(901));
     }
 }

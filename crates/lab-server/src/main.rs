@@ -7,8 +7,8 @@ use std::fs::{self, File};
 use std::path::Path;
 
 use api::state::{
-    AppState, DiscoveredMarket, FeedMode, PaperOrderSide, PortfolioSummary, RuntimeEvent,
-    SourceCount,
+    AppState, DiscoveredMarket, FeedMode, PaperOrderSide, PortfolioSummary, PriceSnapshot,
+    RuntimeEvent, SourceCount,
 };
 use reqwest::Client;
 use runtime::events::RuntimeStage;
@@ -199,6 +199,20 @@ async fn run_paper_live_loop(state: AppState, client: Client) {
                 ts: tick,
             });
         }
+
+        let primary_quote = tracked_quotes.first();
+        let price_snapshot = PriceSnapshot {
+            coinbase_btc_usd: coinbase_px,
+            binance_btc_usdt: binance_px,
+            kraken_btc_usd: kraken_px,
+            polymarket_market_id: primary_quote.map(|quote| quote.market_slug.clone()),
+            polymarket_yes_bid: primary_quote.map(|quote| quote.best_yes_bid),
+            polymarket_yes_ask: primary_quote.map(|quote| quote.best_yes_ask),
+            polymarket_yes_mid: primary_quote.map(|quote| quote.mid_yes),
+            ts: tick,
+        };
+        state.set_price_snapshot(price_snapshot.clone());
+        let _ = state.publish_event(RuntimeEvent::price_snapshot(price_snapshot));
 
         let source_counts = counters.as_source_counts();
         state.set_feed_source_counts(source_counts.clone());

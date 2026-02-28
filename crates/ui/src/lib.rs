@@ -37,6 +37,16 @@ mod tests {
     }
 
     #[test]
+    fn ui_shell_contains_live_prices_panel() {
+        let html = index_html();
+        assert!(html.contains("Live Prices"));
+        assert!(html.contains("Coinbase BTC/USD"));
+        assert!(html.contains("Binance BTC/USDT"));
+        assert!(html.contains("Kraken XBT/USD"));
+        assert!(html.contains("Polymarket YES"));
+    }
+
+    #[test]
     fn app_js_renders_feed_health_from_mode_and_source_counts() {
         let js = app_js();
 
@@ -59,5 +69,13 @@ mod tests {
 
         assert!(js.contains("window.setInterval"));
         assert!(js.contains("fetchFeedHealthIntervalMs"));
+    }
+
+    #[test]
+    fn app_js_routes_price_snapshot_and_polls_endpoint() {
+        let js = app_js();
+
+        assert!(js.contains("price_snapshot"));
+        assert!(js.contains("/prices/snapshot"));
     }
 }

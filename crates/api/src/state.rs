@@ -54,6 +54,33 @@ impl Default for PortfolioSummary {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct PriceSnapshot {
+    pub coinbase_btc_usd: Option<f64>,
+    pub binance_btc_usdt: Option<f64>,
+    pub kraken_btc_usd: Option<f64>,
+    pub polymarket_market_id: Option<String>,
+    pub polymarket_yes_bid: Option<f64>,
+    pub polymarket_yes_ask: Option<f64>,
+    pub polymarket_yes_mid: Option<f64>,
+    pub ts: u64,
+}
+
+impl Default for PriceSnapshot {
+    fn default() -> Self {
+        Self {
+            coinbase_btc_usd: None,
+            binance_btc_usdt: None,
+            kraken_btc_usd: None,
+            polymarket_market_id: None,
+            polymarket_yes_bid: None,
+            polymarket_yes_ask: None,
+            polymarket_yes_mid: None,
+            ts: 0,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartRunError {
     RunIdOverflow,
@@ -101,6 +128,16 @@ pub enum RuntimeEvent {
         pnl: f64,
         position_qty: f64,
         fills: u64,
+    },
+    PriceSnapshot {
+        coinbase_btc_usd: Option<f64>,
+        binance_btc_usdt: Option<f64>,
+        kraken_btc_usd: Option<f64>,
+        polymarket_market_id: Option<String>,
+        polymarket_yes_bid: Option<f64>,
+        polymarket_yes_ask: Option<f64>,
+        polymarket_yes_mid: Option<f64>,
+        ts: u64,
     },
 }
 
@@ -168,6 +205,19 @@ impl RuntimeEvent {
             fills: summary.fills,
         }
     }
+
+    pub fn price_snapshot(snapshot: PriceSnapshot) -> Self {
+        Self::PriceSnapshot {
+            coinbase_btc_usd: snapshot.coinbase_btc_usd,
+            binance_btc_usdt: snapshot.binance_btc_usdt,
+            kraken_btc_usd: snapshot.kraken_btc_usd,
+            polymarket_market_id: snapshot.polymarket_market_id,
+            polymarket_yes_bid: snapshot.polymarket_yes_bid,
+            polymarket_yes_ask: snapshot.polymarket_yes_ask,
+            polymarket_yes_mid: snapshot.polymarket_yes_mid,
+            ts: snapshot.ts,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +228,7 @@ pub struct AppState {
     source_counts: Arc<RwLock<Vec<SourceCount>>>,
     discovered_markets: Arc<RwLock<Vec<DiscoveredMarket>>>,
     portfolio_summary: Arc<RwLock<PortfolioSummary>>,
+    price_snapshot: Arc<RwLock<PriceSnapshot>>,
 }
 
 impl Default for AppState {
@@ -190,6 +241,7 @@ impl Default for AppState {
             source_counts: Arc::new(RwLock::new(Vec::new())),
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
+            price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
         }
     }
 }
@@ -249,6 +301,13 @@ impl AppState {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    pub fn price_snapshot(&self) -> PriceSnapshot {
+        self.price_snapshot
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
     pub fn set_feed_source_counts(&self, source_counts: Vec<SourceCount>) {
         *self
             .source_counts
@@ -270,6 +329,13 @@ impl AppState {
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = summary;
     }
 
+    pub fn set_price_snapshot(&self, snapshot: PriceSnapshot) {
+        *self
+            .price_snapshot
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = snapshot;
+    }
+
     #[cfg(test)]
     pub(crate) fn with_next_run_id_for_test(next_run_id: u64) -> Self {
         let (events_tx, _) = broadcast::channel(256);
@@ -280,6 +346,7 @@ impl AppState {
             source_counts: Arc::new(RwLock::new(Vec::new())),
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
+            price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
         }
     }
 
@@ -293,6 +360,7 @@ impl AppState {
             source_counts: Arc::new(RwLock::new(Vec::new())),
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
+            price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
         }
     }
 
@@ -310,6 +378,7 @@ impl AppState {
             source_counts: Arc::new(RwLock::new(source_counts)),
             discovered_markets: Arc::new(RwLock::new(discovered_markets)),
             portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
+            price_snapshot: Arc::new(RwLock::new(PriceSnapshot::default())),
         }
     }
 }
@@ -318,7 +387,9 @@ impl AppState {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use super::{AppState, DiscoveredMarket, FeedMode, PortfolioSummary, SourceCount};
+    use super::{
+        AppState, DiscoveredMarket, FeedMode, PortfolioSummary, PriceSnapshot, SourceCount,
+    };
 
     #[test]
     fn start_run_returns_overflow_error_at_u64_max() {
@@ -390,5 +461,28 @@ mod tests {
         assert_eq!(portfolio.pnl, 2.4);
         assert_eq!(portfolio.position_qty, 3.0);
         assert_eq!(portfolio.fills, 7);
+
+        state.set_price_snapshot(PriceSnapshot {
+            coinbase_btc_usd: Some(64_100.1),
+            binance_btc_usdt: Some(64_099.8),
+            kraken_btc_usd: Some(64_100.0),
+            polymarket_market_id: Some("btc-up-down".to_owned()),
+            polymarket_yes_bid: Some(0.49),
+            polymarket_yes_ask: Some(0.51),
+            polymarket_yes_mid: Some(0.5),
+            ts: 10,
+        });
+        let snapshot = state.price_snapshot();
+        assert_eq!(snapshot.coinbase_btc_usd, Some(64_100.1));
+        assert_eq!(snapshot.binance_btc_usdt, Some(64_099.8));
+        assert_eq!(snapshot.kraken_btc_usd, Some(64_100.0));
+        assert_eq!(
+            snapshot.polymarket_market_id.as_deref(),
+            Some("btc-up-down")
+        );
+        assert_eq!(snapshot.polymarket_yes_bid, Some(0.49));
+        assert_eq!(snapshot.polymarket_yes_ask, Some(0.51));
+        assert_eq!(snapshot.polymarket_yes_mid, Some(0.5));
+        assert_eq!(snapshot.ts, 10);
     }
 }

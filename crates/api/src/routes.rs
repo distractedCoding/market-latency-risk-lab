@@ -9,7 +9,8 @@ use serde::Serialize;
 
 use crate::{
     state::{
-        AppState, DiscoveredMarketsResponse, FeedHealthResponse, PortfolioSummary, RuntimeEvent,
+        AppState, DiscoveredMarketsResponse, FeedHealthResponse, PortfolioSummary, PriceSnapshot,
+        RuntimeEvent,
     },
     ws,
 };
@@ -19,6 +20,7 @@ pub fn router(state: AppState) -> Router {
         .route("/", get(dashboard_index))
         .route("/feed/health", get(feed_health))
         .route("/markets/discovered", get(markets_discovered))
+        .route("/prices/snapshot", get(prices_snapshot))
         .route("/portfolio/summary", get(portfolio_summary))
         .route("/runs", post(start_run))
         .route("/static/styles.css", get(dashboard_styles))
@@ -58,6 +60,10 @@ async fn markets_discovered(State(state): State<AppState>) -> Json<DiscoveredMar
 
 async fn portfolio_summary(State(state): State<AppState>) -> Json<PortfolioSummary> {
     Json(state.portfolio_summary())
+}
+
+async fn prices_snapshot(State(state): State<AppState>) -> Json<PriceSnapshot> {
+    Json(state.price_snapshot())
 }
 
 #[derive(Debug, Serialize)]
