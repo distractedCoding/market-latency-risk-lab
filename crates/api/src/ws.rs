@@ -16,21 +16,32 @@ pub async fn events_socket(
 }
 
 async fn stream_events(mut socket: WebSocket, state: AppState) {
-    let connected = RuntimeEvent::new("connected");
+    let connected = RuntimeEvent::connected();
     if send_event(&mut socket, &connected).await.is_err() {
         return;
     }
 
     let mut events = state.subscribe_events();
     loop {
-        match events.recv().await {
-            Ok(event) => {
-                if send_event(&mut socket, &event).await.is_err() {
-                    return;
+        tokio::select! {
+            inbound = socket.recv() => {
+                match inbound {
+                    Some(Ok(Message::Close(_))) | None => return,
+                    Some(Ok(_)) => {}
+                    Some(Err(_)) => return,
                 }
             }
-            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+            event = events.recv() => {
+                match event {
+                    Ok(event) => {
+                        if send_event(&mut socket, &event).await.is_err() {
+                            return;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                }
+            }
         }
     }
 }

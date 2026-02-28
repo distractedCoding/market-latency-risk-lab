@@ -26,7 +26,10 @@ mod tests {
     use tokio_tungstenite::tungstenite::Message;
     use tower::ServiceExt;
 
-    use crate::{app, routes, state::AppState};
+    use crate::{
+        app, routes,
+        state::{AppState, RuntimeEvent},
+    };
 
     #[derive(Debug, Deserialize)]
     struct StartRunResponse {
@@ -133,6 +136,49 @@ mod tests {
             value.get("event_type").and_then(Value::as_str),
             Some("connected")
         );
+        assert_eq!(value.get("run_id").cloned(), Some(Value::Null));
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn websocket_forwards_published_events() {
+        let state = AppState::new();
+        let app = routes::router(state.clone());
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let url = format!("ws://{addr}/ws/events");
+        let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+
+        let _ = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+
+        state.publish_event(RuntimeEvent::run_started(42)).unwrap();
+
+        let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let payload = match message {
+            Message::Text(text) => text,
+            other => panic!("expected text websocket message, got {other:?}"),
+        };
+        let value: Value = serde_json::from_str(payload.as_ref()).unwrap();
+
+        assert_eq!(
+            value.get("event_type").and_then(Value::as_str),
+            Some("run_started")
+        );
+        assert_eq!(value.get("run_id").and_then(Value::as_u64), Some(42));
 
         server.abort();
     }

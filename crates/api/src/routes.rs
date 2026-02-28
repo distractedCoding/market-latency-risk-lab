@@ -8,7 +8,10 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::{state::AppState, ws};
+use crate::{
+    state::{AppState, RuntimeEvent},
+    ws,
+};
 
 pub fn router(state: AppState) -> Router {
     Router::new()
@@ -26,6 +29,7 @@ async fn start_run(State(state): State<AppState>) -> Result<impl IntoResponse, S
     let run_id = state
         .start_run()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let _ = state.publish_event(RuntimeEvent::run_started(run_id));
     let location = format!("/runs/{run_id}");
 
     Ok((

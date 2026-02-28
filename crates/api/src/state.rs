@@ -10,15 +10,31 @@ pub enum StartRunError {
     RunIdOverflow,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeEventType {
+    Connected,
+    RunStarted,
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct RuntimeEvent {
-    pub event_type: String,
+    pub event_type: RuntimeEventType,
+    pub run_id: Option<u64>,
 }
 
 impl RuntimeEvent {
-    pub fn new(event_type: impl Into<String>) -> Self {
+    pub fn connected() -> Self {
         Self {
-            event_type: event_type.into(),
+            event_type: RuntimeEventType::Connected,
+            run_id: None,
+        }
+    }
+
+    pub fn run_started(run_id: u64) -> Self {
+        Self {
+            event_type: RuntimeEventType::RunStarted,
+            run_id: Some(run_id),
         }
     }
 }
