@@ -3,8 +3,9 @@
 Educational, closed-environment lab for studying latency-driven market risk mechanics.
 
 ## Scope
-This project defaults to **live-data paper trading**:
-- live market data ingestion for paper decisions
+This project currently defaults configuration to **paper-live** mode, with runtime wiring still in progress:
+- paper-live scaffolding and default mode contract are present
+- full live-data ingest and mode-specific execution flow are not fully wired yet
 - no order routing to real venues
 - no real-money execution
 - no private key based execution paths
@@ -26,7 +27,7 @@ The server listens on `0.0.0.0:8080` by default.
 ## Server Configuration
 Use environment variables to override defaults:
 - `LAB_SERVER_ADDR` (default `0.0.0.0:8080`)
-- `LAB_SERVER_MODE` (default `paper-live`; set to `sim` to opt out)
+- `LAB_SERVER_MODE` (default `paper-live`; currently parsed and shown in startup logs, with full mode-specific execution path still being wired)
 - `LAB_SERVER_REPLAY_OUTPUT` (default `artifacts/replay.csv`)
 
 Example:

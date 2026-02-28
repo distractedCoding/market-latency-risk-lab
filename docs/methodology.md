@@ -4,7 +4,8 @@ This lab reproduces the *structure* of latency-sensitive trading claims in a con
 
 ## Runtime and Workflow
 - Rust workspace is the source of truth (`cargo test --workspace`, `cargo run -p lab-server`).
-- `lab-server` defaults to `paper-live` mode: live-data ingestion with paper-only decisions and fills.
+- `lab-server` defaults to `paper-live` mode at the configuration/interface level.
+- `LAB_SERVER_MODE` is currently parsed and surfaced in the startup banner; full mode-specific execution paths are still being wired.
 - `lab-server` exposes runtime services and health endpoints for local study.
 - Default server bind is `0.0.0.0:8080` and can be overridden with `LAB_SERVER_ADDR`.
 - Runtime mode can be overridden with `LAB_SERVER_MODE` (`paper-live` default, `sim` fallback).

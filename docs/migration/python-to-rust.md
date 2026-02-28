@@ -23,8 +23,9 @@ Optional server configuration:
 - `LAB_SERVER_REPLAY_OUTPUT` to override replay path (default `artifacts/replay.csv`)
 
 ## Scope Reminder
-This project now defaults to live-data paper trading:
-- live market data is ingested for paper strategy decisions
+This project now defaults configuration to paper-live:
+- paper-live scaffolding and default contract are present
+- `LAB_SERVER_MODE` is parsed and shown at startup, while live ingest and full mode-specific runtime wiring are still in progress
 - no order routing to real venues
 - no real-money execution
 - no private key based execution paths

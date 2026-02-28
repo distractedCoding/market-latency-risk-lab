@@ -28,6 +28,7 @@ PATH="$HOME/.cargo/bin:$PATH" cargo run -p lab-server
 
 Expected startup signal in logs:
 - `lab-server startup mode: paper-live`
+- Note: this confirms mode parsing/banner output in the current build; full mode-specific runtime behavior is still being connected.
 
 ## 3. Health Checks
 
@@ -48,13 +49,13 @@ curl -fsS http://127.0.0.1:8080/feed/health
 
 Expected JSON includes:
 - `"mode":"paper-live"`
-- `"source_counts"`
+- `"source_counts"` (may be empty in the current build until ingest-to-API wiring is connected)
 
 ## 4. Runtime Monitoring
 
 - Watch logs for mode drift or startup retries.
 - Confirm replay file exists and updates at `LAB_SERVER_REPLAY_OUTPUT`.
-- Treat empty `source_counts` as degraded ingestion until data sources connect.
+- `source_counts` may remain empty in the current build while ingest-to-API wiring is still in progress.
 
 ## 5. Stop Conditions
 
