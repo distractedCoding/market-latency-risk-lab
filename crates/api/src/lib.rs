@@ -247,6 +247,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn get_portfolio_summary_returns_typed_payload() {
+        let state = AppState::new();
+        state.set_portfolio_summary(crate::state::PortfolioSummary {
+            equity: 123.45,
+            pnl: 23.45,
+            position_qty: 7.0,
+            fills: 42,
+        });
+        let app = routes::router(state);
+
+        let response = send_get(&app, "/portfolio/summary").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: Value = parse_json(response).await;
+        assert_eq!(payload["equity"].as_f64(), Some(123.45));
+        assert_eq!(payload["pnl"].as_f64(), Some(23.45));
+        assert_eq!(payload["position_qty"].as_f64(), Some(7.0));
+        assert_eq!(payload["fills"].as_u64(), Some(42));
+    }
+
+    #[tokio::test]
     async fn post_runs_returns_internal_server_error_on_run_id_overflow() {
         let app = routes::router(AppState::with_next_run_id_for_test(u64::MAX));
 

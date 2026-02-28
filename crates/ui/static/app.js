@@ -2,23 +2,43 @@ const statusEl = document.getElementById("connection-status");
 const lastEventEl = document.getElementById("last-event");
 const feedEl = document.getElementById("event-feed");
 const feedHealthEl = document.getElementById("feed-health");
+
 const paperFillsCountEl = document.getElementById("paper-fills-count");
 const paperFillsLastEl = document.getElementById("paper-fills-last");
-let paperFillCount = 0;
+
+const moneyMadeEl = document.getElementById("money-made");
+const openPositionEl = document.getElementById("open-position");
+const totalFillsEl = document.getElementById("total-fills");
+const equityLatestEl = document.getElementById("equity-latest");
+const equityChartEl = document.getElementById("equity-chart");
+
 const fetchFeedHealthIntervalMs = 5000;
+const fetchPortfolioIntervalMs = 3000;
+const maxEquityPoints = 180;
+
+let paperFillCount = 0;
 let feedHealthPollInFlight = false;
+let portfolioPollInFlight = false;
+const equityPoints = [];
 
 function setStatus(text, className) {
+  if (!statusEl) {
+    return;
+  }
   statusEl.textContent = text;
   statusEl.className = `pill ${className}`;
 }
 
 function pushEvent(payload) {
+  if (!feedEl) {
+    return;
+  }
+
   const item = document.createElement("li");
   item.textContent = payload;
   feedEl.prepend(item);
 
-  while (feedEl.children.length > 20) {
+  while (feedEl.children.length > 24) {
     feedEl.removeChild(feedEl.lastElementChild);
   }
 }
@@ -29,6 +49,21 @@ function maybeParseJson(raw) {
   } catch {
     return null;
   }
+}
+
+function formatMoney(value) {
+  if (!Number.isFinite(value)) {
+    return "$0.00";
+  }
+  const sign = value >= 0 ? "+" : "-";
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
+}
+
+function formatFixed(value, digits) {
+  if (!Number.isFinite(value)) {
+    return "0.00";
+  }
+  return value.toFixed(digits);
 }
 
 function updateFeedHealth(data) {
@@ -72,9 +107,109 @@ function updatePaperFills(data) {
   paperFillsCountEl.textContent = String(paperFillCount);
 
   const side = data.side || "?";
-  const size = data.size ?? data.qty ?? "?";
-  const price = data.fill_px ?? "?";
-  paperFillsLastEl.textContent = `${side} ${size} @ ${price}`;
+  const qty = Number.isFinite(data.qty) ? data.qty : "?";
+  const price = Number.isFinite(data.fill_px) ? data.fill_px.toFixed(3) : "?";
+  const market = typeof data.market_id === "string" ? data.market_id : "?";
+  paperFillsLastEl.textContent = `${side} ${qty} @ ${price} (${market})`;
+}
+
+function pushEquityPoint(value) {
+  if (!Number.isFinite(value)) {
+    return;
+  }
+
+  equityPoints.push(value);
+  if (equityPoints.length > maxEquityPoints) {
+    equityPoints.shift();
+  }
+  renderEquityChart();
+}
+
+function renderEquityChart() {
+  if (!equityChartEl) {
+    return;
+  }
+
+  const context = equityChartEl.getContext("2d");
+  if (!context) {
+    return;
+  }
+
+  const width = equityChartEl.width;
+  const height = equityChartEl.height;
+  const pad = 16;
+  const innerWidth = width - pad * 2;
+  const innerHeight = height - pad * 2;
+
+  context.clearRect(0, 0, width, height);
+
+  context.fillStyle = "#f7fbff";
+  context.fillRect(0, 0, width, height);
+
+  context.strokeStyle = "#dce7f4";
+  context.lineWidth = 1;
+  for (let row = 0; row < 4; row += 1) {
+    const y = pad + (innerHeight / 3) * row;
+    context.beginPath();
+    context.moveTo(pad, y);
+    context.lineTo(width - pad, y);
+    context.stroke();
+  }
+
+  if (equityPoints.length < 2) {
+    return;
+  }
+
+  const min = Math.min(...equityPoints);
+  const max = Math.max(...equityPoints);
+  const spread = Math.max(max - min, 0.0001);
+
+  context.beginPath();
+  for (let i = 0; i < equityPoints.length; i += 1) {
+    const x = pad + (i / (equityPoints.length - 1)) * innerWidth;
+    const normalized = (equityPoints[i] - min) / spread;
+    const y = height - pad - normalized * innerHeight;
+    if (i === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
+    }
+  }
+
+  context.lineWidth = 2;
+  context.strokeStyle = "#0b6ef9";
+  context.stroke();
+
+  const last = equityPoints[equityPoints.length - 1];
+  const dotX = width - pad;
+  const dotY = height - pad - ((last - min) / spread) * innerHeight;
+  context.beginPath();
+  context.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
+  context.fillStyle = "#0b6ef9";
+  context.fill();
+}
+
+function updatePortfolioSummary(summary) {
+  const pnl = Number(summary.pnl);
+  const equity = Number(summary.equity);
+  const positionQty = Number(summary.position_qty);
+  const fills = Number(summary.fills);
+
+  if (moneyMadeEl) {
+    moneyMadeEl.textContent = formatMoney(pnl);
+    moneyMadeEl.style.color = pnl >= 0 ? "#148f57" : "#c43227";
+  }
+  if (openPositionEl) {
+    openPositionEl.textContent = formatFixed(positionQty, 2);
+  }
+  if (totalFillsEl && Number.isFinite(fills)) {
+    totalFillsEl.textContent = String(Math.floor(fills));
+  }
+  if (equityLatestEl) {
+    equityLatestEl.textContent = `equity: ${formatFixed(equity, 2)}`;
+  }
+
+  pushEquityPoint(equity);
 }
 
 function routeTelemetry(rawEvent) {
@@ -91,6 +226,11 @@ function routeTelemetry(rawEvent) {
 
   if (eventType === "paper_fill") {
     updatePaperFills(parsed);
+    return;
+  }
+
+  if (eventType === "portfolio_snapshot") {
+    updatePortfolioSummary(parsed);
   }
 }
 
@@ -132,16 +272,39 @@ async function fetchFeedHealth() {
     if (!response.ok) {
       return;
     }
-
     const payload = await response.json();
     if (payload && typeof payload === "object") {
       updateFeedHealth(payload);
     }
-  } catch {} finally {
+  } catch {
+  } finally {
     feedHealthPollInFlight = false;
   }
 }
 
+async function fetchPortfolioSummary() {
+  if (portfolioPollInFlight) {
+    return;
+  }
+
+  portfolioPollInFlight = true;
+  try {
+    const response = await fetch("/portfolio/summary");
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    if (payload && typeof payload === "object") {
+      updatePortfolioSummary(payload);
+    }
+  } catch {
+  } finally {
+    portfolioPollInFlight = false;
+  }
+}
+
 fetchFeedHealth();
+fetchPortfolioSummary();
 window.setInterval(fetchFeedHealth, fetchFeedHealthIntervalMs);
+window.setInterval(fetchPortfolioSummary, fetchPortfolioIntervalMs);
 connect();

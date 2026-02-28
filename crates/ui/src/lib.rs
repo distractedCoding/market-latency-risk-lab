@@ -32,6 +32,8 @@ mod tests {
         let html = index_html();
         assert!(html.contains("Feed Health"));
         assert!(html.contains("Paper Fills"));
+        assert!(html.contains("Money Made"));
+        assert!(html.contains("Equity Curve"));
     }
 
     #[test]
@@ -40,6 +42,15 @@ mod tests {
 
         assert!(js.contains("source_counts"));
         assert!(js.contains("top source"));
+    }
+
+    #[test]
+    fn app_js_renders_portfolio_summary_and_chart() {
+        let js = app_js();
+
+        assert!(js.contains("/portfolio/summary"));
+        assert!(js.contains("equityPoints"));
+        assert!(js.contains("renderEquityChart"));
     }
 
     #[test]

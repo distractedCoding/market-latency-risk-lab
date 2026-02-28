@@ -1,11 +1,16 @@
+use api::state::AppState;
 use axum::{routing::get, Router};
 
 pub fn build_app() -> Router {
+    build_app_with_state(AppState::new())
+}
+
+pub fn build_app_with_state(state: AppState) -> Router {
     debug_assert!(runtime::module_ready());
     debug_assert!(api::module_ready());
     debug_assert!(ui::module_ready());
 
-    api::app().route("/health", get(healthcheck))
+    api::routes::router(state).route("/health", get(healthcheck))
 }
 
 async fn healthcheck() -> &'static str {

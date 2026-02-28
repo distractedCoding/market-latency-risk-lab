@@ -8,24 +8,45 @@
 </head>
 <body>
   <main class="shell">
-    <header class="shell-header">
+    <header class="hero">
+      <p class="eyebrow">Paper-Live Mode</p>
       <h1>Market Latency Risk Lab</h1>
-      <p>Live stream from <code>/ws/events</code></p>
+      <p class="subtitle">Live telemetry from <code>/ws/events</code> with real BTC + Polymarket data ingestion.</p>
     </header>
 
-    <section class="panel-grid">
-      <article class="panel">
-        <h2>Connection</h2>
+    <section class="kpi-grid">
+      <article class="kpi-card">
+        <p class="kpi-label">Connection</p>
         <p id="connection-status" class="pill state-pending">Connecting...</p>
       </article>
-      <article class="panel">
-        <h2>Last Event</h2>
-        <p id="last-event" class="mono">Waiting for data...</p>
+      <article class="kpi-card">
+        <p class="kpi-label">Money Made</p>
+        <p id="money-made" class="kpi-value">$0.00</p>
       </article>
+      <article class="kpi-card">
+        <p class="kpi-label">Open Position</p>
+        <p id="open-position" class="kpi-value">0.00</p>
+      </article>
+      <article class="kpi-card">
+        <p class="kpi-label">Total Fills</p>
+        <p id="total-fills" class="kpi-value">0</p>
+      </article>
+    </section>
+
+    <section class="panel-grid">
+      <article class="panel chart-panel">
+        <div class="panel-header-row">
+          <h2>Equity Curve</h2>
+          <p id="equity-latest" class="mono">equity: 0.00</p>
+        </div>
+        <canvas id="equity-chart" width="640" height="220" aria-label="equity chart"></canvas>
+      </article>
+
       <article class="panel">
         <h2>Feed Health</h2>
-        <p id="feed-health" class="mono">No health updates yet</p>
+        <p id="feed-health" class="mono">Waiting for feed snapshot...</p>
       </article>
+
       <article class="panel">
         <h2>Paper Fills</h2>
         <div class="stat-grid">
@@ -34,6 +55,11 @@
           <p class="mono stat-label">Last Fill</p>
           <p id="paper-fills-last" class="mono stat-value">None</p>
         </div>
+      </article>
+
+      <article class="panel">
+        <h2>Last Event</h2>
+        <p id="last-event" class="mono">Waiting for data...</p>
       </article>
     </section>
 

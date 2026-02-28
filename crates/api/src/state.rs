@@ -35,6 +35,25 @@ pub struct DiscoveredMarketsResponse {
     pub markets: Vec<DiscoveredMarket>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub struct PortfolioSummary {
+    pub equity: f64,
+    pub pnl: f64,
+    pub position_qty: f64,
+    pub fills: u64,
+}
+
+impl Default for PortfolioSummary {
+    fn default() -> Self {
+        Self {
+            equity: 0.0,
+            pnl: 0.0,
+            position_qty: 0.0,
+            fills: 0,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StartRunError {
     RunIdOverflow,
@@ -72,6 +91,16 @@ pub enum RuntimeEvent {
         market_id: String,
         reason: String,
         requested_qty: f64,
+    },
+    FeedHealth {
+        mode: FeedMode,
+        source_counts: Vec<SourceCount>,
+    },
+    PortfolioSnapshot {
+        equity: f64,
+        pnl: f64,
+        position_qty: f64,
+        fills: u64,
     },
 }
 
@@ -123,6 +152,22 @@ impl RuntimeEvent {
             requested_qty,
         }
     }
+
+    pub fn feed_health(mode: FeedMode, source_counts: Vec<SourceCount>) -> Self {
+        Self::FeedHealth {
+            mode,
+            source_counts,
+        }
+    }
+
+    pub fn portfolio_snapshot(summary: PortfolioSummary) -> Self {
+        Self::PortfolioSnapshot {
+            equity: summary.equity,
+            pnl: summary.pnl,
+            position_qty: summary.position_qty,
+            fills: summary.fills,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -132,6 +177,7 @@ pub struct AppState {
     feed_mode: FeedMode,
     source_counts: Arc<RwLock<Vec<SourceCount>>>,
     discovered_markets: Arc<RwLock<Vec<DiscoveredMarket>>>,
+    portfolio_summary: Arc<RwLock<PortfolioSummary>>,
 }
 
 impl Default for AppState {
@@ -143,6 +189,7 @@ impl Default for AppState {
             feed_mode: FeedMode::PaperLive,
             source_counts: Arc::new(RwLock::new(Vec::new())),
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
+            portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
         }
     }
 }
@@ -195,6 +242,34 @@ impl AppState {
         }
     }
 
+    pub fn portfolio_summary(&self) -> PortfolioSummary {
+        *self
+            .portfolio_summary
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn set_feed_source_counts(&self, source_counts: Vec<SourceCount>) {
+        *self
+            .source_counts
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = source_counts;
+    }
+
+    pub fn set_discovered_markets(&self, discovered_markets: Vec<DiscoveredMarket>) {
+        *self
+            .discovered_markets
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = discovered_markets;
+    }
+
+    pub fn set_portfolio_summary(&self, summary: PortfolioSummary) {
+        *self
+            .portfolio_summary
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = summary;
+    }
+
     #[cfg(test)]
     pub(crate) fn with_next_run_id_for_test(next_run_id: u64) -> Self {
         let (events_tx, _) = broadcast::channel(256);
@@ -204,6 +279,7 @@ impl AppState {
             feed_mode: FeedMode::PaperLive,
             source_counts: Arc::new(RwLock::new(Vec::new())),
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
+            portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
         }
     }
 
@@ -216,6 +292,7 @@ impl AppState {
             feed_mode,
             source_counts: Arc::new(RwLock::new(Vec::new())),
             discovered_markets: Arc::new(RwLock::new(Vec::new())),
+            portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
         }
     }
 
@@ -232,26 +309,8 @@ impl AppState {
             feed_mode,
             source_counts: Arc::new(RwLock::new(source_counts)),
             discovered_markets: Arc::new(RwLock::new(discovered_markets)),
+            portfolio_summary: Arc::new(RwLock::new(PortfolioSummary::default())),
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_feed_source_counts_for_test(&self, source_counts: Vec<SourceCount>) {
-        *self
-            .source_counts
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = source_counts;
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_discovered_markets_for_test(
-        &self,
-        discovered_markets: Vec<DiscoveredMarket>,
-    ) {
-        *self
-            .discovered_markets
-            .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = discovered_markets;
     }
 }
 
@@ -259,7 +318,7 @@ impl AppState {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use super::{AppState, DiscoveredMarket, FeedMode, SourceCount};
+    use super::{AppState, DiscoveredMarket, FeedMode, PortfolioSummary, SourceCount};
 
     #[test]
     fn start_run_returns_overflow_error_at_u64_max() {
@@ -303,11 +362,11 @@ mod tests {
     #[test]
     fn test_setters_update_feed_snapshots() {
         let state = AppState::new();
-        state.set_feed_source_counts_for_test(vec![SourceCount {
+        state.set_feed_source_counts(vec![SourceCount {
             source: "kalshi".to_owned(),
             count: 9,
         }]);
-        state.set_discovered_markets_for_test(vec![DiscoveredMarket {
+        state.set_discovered_markets(vec![DiscoveredMarket {
             source: "kalshi".to_owned(),
             market_id: "eth-up-down".to_owned(),
         }]);
@@ -319,5 +378,17 @@ mod tests {
         assert_eq!(feed_health.source_counts[0].count, 9);
         assert_eq!(discovered.markets[0].source, "kalshi");
         assert_eq!(discovered.markets[0].market_id, "eth-up-down");
+
+        state.set_portfolio_summary(PortfolioSummary {
+            equity: 12.4,
+            pnl: 2.4,
+            position_qty: 3.0,
+            fills: 7,
+        });
+        let portfolio = state.portfolio_summary();
+        assert_eq!(portfolio.equity, 12.4);
+        assert_eq!(portfolio.pnl, 2.4);
+        assert_eq!(portfolio.position_qty, 3.0);
+        assert_eq!(portfolio.fills, 7);
     }
 }
