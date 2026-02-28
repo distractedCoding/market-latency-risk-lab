@@ -8,7 +8,10 @@ pub fn calculate_orders_per_sec(processed_orders: u64, elapsed_nanos: u128) -> u
     u64::try_from(achieved).unwrap_or(u64::MAX)
 }
 
-pub fn meets_target_orders_per_sec(achieved_orders_per_sec: u64, target_orders_per_sec: u64) -> bool {
+pub fn meets_target_orders_per_sec(
+    achieved_orders_per_sec: u64,
+    target_orders_per_sec: u64,
+) -> bool {
     achieved_orders_per_sec >= target_orders_per_sec
 }
 

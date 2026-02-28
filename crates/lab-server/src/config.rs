@@ -27,7 +27,10 @@ impl fmt::Display for ConfigError {
                 write!(f, "LAB_SERVER_ADDR is not a valid socket address: {err}")
             }
             Self::InvalidReplayOutputPath => {
-                write!(f, "LAB_SERVER_REPLAY_OUTPUT must not be empty or whitespace")
+                write!(
+                    f,
+                    "LAB_SERVER_REPLAY_OUTPUT must not be empty or whitespace"
+                )
             }
             Self::NonUnicodeListenAddr => {
                 write!(f, "LAB_SERVER_ADDR contains non-unicode data")

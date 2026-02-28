@@ -1,7 +1,7 @@
+pub mod benchmark;
 pub mod engine;
 pub mod events;
 pub mod logging;
-pub mod benchmark;
 pub mod metrics;
 pub mod replay;
 pub mod supervisor;

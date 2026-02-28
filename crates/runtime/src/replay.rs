@@ -36,15 +36,11 @@ impl<W: Write> ReplayCsvWriter<W> {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::Cell,
-        io,
-        rc::Rc,
-    };
+    use std::{cell::Cell, io, rc::Rc};
 
     use crate::logging::{InMemoryRunLogWriter, RunLogEventKind, RunLogWriter};
 
-    use super::{REPLAY_CSV_HEADER, ReplayCsvWriter};
+    use super::{ReplayCsvWriter, REPLAY_CSV_HEADER};
 
     struct TrackingWriter {
         bytes: Vec<u8>,
@@ -83,7 +79,10 @@ mod tests {
 
     impl RunLogWriter for FlushAssertingLogWriter {
         fn write(&mut self, _event: crate::logging::RunLogEvent) {
-            assert!(self.flush_called.get(), "expected writer flush before logging");
+            assert!(
+                self.flush_called.get(),
+                "expected writer flush before logging"
+            );
         }
     }
 
@@ -127,6 +126,9 @@ mod tests {
         assert_eq!(String::from_utf8(output).unwrap(), REPLAY_CSV_HEADER);
         assert_eq!(log_writer.events().len(), 1);
         assert_eq!(log_writer.events()[0].tick, 42);
-        assert_eq!(log_writer.events()[0].kind, RunLogEventKind::ReplayArtifactWritten);
+        assert_eq!(
+            log_writer.events()[0].kind,
+            RunLogEventKind::ReplayArtifactWritten
+        );
     }
 }
