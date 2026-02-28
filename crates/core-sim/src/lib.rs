@@ -1,9 +1,13 @@
 mod config;
+mod fills;
 mod generators;
+mod orderbook;
 mod state;
 
 pub use config::SimConfig;
+pub use fills::{Fill, FillSummary};
 pub use generators::{MarketLagGenerator, PriceGenerator};
+pub use orderbook::OrderBook;
 pub use state::SimState;
 
 pub fn workspace_bootstrap() -> bool {
