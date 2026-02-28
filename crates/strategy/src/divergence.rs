@@ -5,19 +5,45 @@ pub enum Signal {
     Hold,
 }
 
-pub fn divergence(prediction_price: f64, market_price: f64) -> f64 {
-    prediction_price - market_price
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StrategyError {
+    NonFiniteInput,
+    NonPositiveMarketPrice,
+    NegativeThreshold,
+    InvalidBaseOrderSize,
+    InvalidPositionSize,
 }
 
-pub fn emit_signal(prediction_price: f64, market_price: f64, threshold: f64) -> Signal {
-    let divergence = divergence(prediction_price, market_price);
-    let threshold = threshold.abs();
+pub fn divergence(prediction_price: f64, market_price: f64) -> Result<f64, StrategyError> {
+    if !prediction_price.is_finite() || !market_price.is_finite() {
+        return Err(StrategyError::NonFiniteInput);
+    }
+    if market_price <= 0.0 {
+        return Err(StrategyError::NonPositiveMarketPrice);
+    }
+
+    Ok(prediction_price - market_price)
+}
+
+pub fn emit_signal(
+    prediction_price: f64,
+    market_price: f64,
+    threshold: f64,
+) -> Result<Signal, StrategyError> {
+    if !threshold.is_finite() {
+        return Err(StrategyError::NonFiniteInput);
+    }
+    if threshold < 0.0 {
+        return Err(StrategyError::NegativeThreshold);
+    }
+
+    let divergence = divergence(prediction_price, market_price)?;
 
     if divergence > threshold {
-        Signal::Buy
+        Ok(Signal::Buy)
     } else if divergence < -threshold {
-        Signal::Sell
+        Ok(Signal::Sell)
     } else {
-        Signal::Hold
+        Ok(Signal::Hold)
     }
 }
