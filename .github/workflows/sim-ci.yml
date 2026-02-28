@@ -6,37 +6,16 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-and-run:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-      - name: Install deps
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt pytest
-      - name: Run tests
-        run: pytest -q
-      - name: Run simulation smoke
-        run: python -m sim.main --steps 2000 --output artifacts/run.csv
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: simulation-run
-          path: artifacts/run.csv
-
-  rust-smoke:
+  rust-ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
         with:
-          components: rustfmt,clippy
+          components: rustfmt
       - name: Format check
         run: cargo fmt --all -- --check
-      - name: Workspace smoke check
-        run: cargo check --workspace -q
-      - name: Core simulator tests
-        run: cargo test -p core-sim -q
+      - name: Workspace tests
+        run: cargo test --workspace -q
+      - name: Lab server smoke check
+        run: cargo check -p lab-server -q
