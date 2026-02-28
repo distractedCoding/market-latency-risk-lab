@@ -37,7 +37,10 @@ pub fn normalized_divergence(
     Ok(raw_divergence / market_price)
 }
 
-pub fn signal_from_divergence(divergence: f64, threshold: f64) -> Result<Signal, StrategyError> {
+fn signal_from_thresholded_divergence(
+    divergence: f64,
+    threshold: f64,
+) -> Result<Signal, StrategyError> {
     if !divergence.is_finite() || !threshold.is_finite() {
         return Err(StrategyError::NonFiniteInput);
     }
@@ -54,12 +57,53 @@ pub fn signal_from_divergence(divergence: f64, threshold: f64) -> Result<Signal,
     }
 }
 
+pub fn signal_from_raw_divergence(
+    raw_divergence: f64,
+    threshold: f64,
+) -> Result<Signal, StrategyError> {
+    signal_from_thresholded_divergence(raw_divergence, threshold)
+}
+
+pub fn signal_from_normalized_divergence(
+    normalized_divergence: f64,
+    threshold: f64,
+) -> Result<Signal, StrategyError> {
+    signal_from_thresholded_divergence(normalized_divergence, threshold)
+}
+
 pub fn emit_signal(
     prediction_price: f64,
     market_price: f64,
     threshold: f64,
 ) -> Result<Signal, StrategyError> {
-    let divergence = divergence(prediction_price, market_price)?;
+    let raw_divergence = divergence(prediction_price, market_price)?;
 
-    signal_from_divergence(divergence, threshold)
+    signal_from_raw_divergence(raw_divergence, threshold)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        signal_from_normalized_divergence, signal_from_raw_divergence, Signal, StrategyError,
+    };
+
+    #[test]
+    fn raw_divergence_threshold_uses_absolute_price_delta_units() {
+        assert_eq!(signal_from_raw_divergence(0.25, 0.1), Ok(Signal::Buy));
+        assert_eq!(signal_from_raw_divergence(-0.25, 0.1), Ok(Signal::Sell));
+    }
+
+    #[test]
+    fn normalized_divergence_threshold_uses_ratio_units() {
+        assert_eq!(signal_from_normalized_divergence(0.004, 0.003), Ok(Signal::Buy));
+        assert_eq!(signal_from_normalized_divergence(-0.004, 0.003), Ok(Signal::Sell));
+    }
+
+    #[test]
+    fn normalized_divergence_rejects_negative_threshold() {
+        assert_eq!(
+            signal_from_normalized_divergence(0.004, -0.003),
+            Err(StrategyError::NegativeThreshold)
+        );
+    }
 }

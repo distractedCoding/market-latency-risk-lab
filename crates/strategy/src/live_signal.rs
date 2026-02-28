@@ -1,20 +1,20 @@
-use crate::divergence::{normalized_divergence, signal_from_divergence, Signal, StrategyError};
-
-pub type Action = Signal;
+use crate::divergence::{
+    normalized_divergence, signal_from_normalized_divergence, Signal, StrategyError,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct LiveSignal {
-    pub action: Action,
+    pub action: Signal,
     pub normalized_divergence: f64,
 }
 
 pub fn live_signal(
-    btc_reference_price: f64,
+    prediction_price: f64,
     market_price: f64,
     threshold: f64,
 ) -> Result<LiveSignal, StrategyError> {
-    let normalized_divergence = normalized_divergence(btc_reference_price, market_price)?;
-    let action = signal_from_divergence(normalized_divergence, threshold)?;
+    let normalized_divergence = normalized_divergence(prediction_price, market_price)?;
+    let action = signal_from_normalized_divergence(normalized_divergence, threshold)?;
 
     Ok(LiveSignal {
         action,
@@ -24,25 +24,26 @@ pub fn live_signal(
 
 #[cfg(test)]
 mod tests {
-    use super::{live_signal, Action};
+    use super::live_signal;
+    use crate::Signal;
     use crate::StrategyError;
 
     #[test]
-    fn emits_buy_intent_when_btc_reference_exceeds_market_threshold() {
+    fn emits_buy_signal_when_prediction_exceeds_market_threshold() {
         let signal = live_signal(64_200.0, 63_800.0, 0.003).unwrap();
-        assert_eq!(signal.action, Action::Buy);
+        assert_eq!(signal.action, Signal::Buy);
     }
 
     #[test]
-    fn emits_sell_intent_when_btc_reference_is_below_market_threshold() {
+    fn emits_sell_signal_when_prediction_is_below_market_threshold() {
         let signal = live_signal(63_500.0, 63_800.0, 0.003).unwrap();
-        assert_eq!(signal.action, Action::Sell);
+        assert_eq!(signal.action, Signal::Sell);
     }
 
     #[test]
-    fn emits_hold_intent_when_normalized_divergence_is_within_threshold_band() {
+    fn emits_hold_signal_when_normalized_divergence_is_within_threshold_band() {
         let signal = live_signal(63_900.0, 63_800.0, 0.003).unwrap();
-        assert_eq!(signal.action, Action::Hold);
+        assert_eq!(signal.action, Signal::Hold);
     }
 
     #[test]

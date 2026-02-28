@@ -4,7 +4,7 @@ pub mod risk;
 pub mod sizing;
 
 pub use divergence::{divergence, emit_signal, Signal, StrategyError};
-pub use live_signal::{live_signal, Action, LiveSignal};
+pub use live_signal::{live_signal, LiveSignal};
 pub use risk::RiskState;
 pub use sizing::{regime_multiplier, size_for_signal, Regime, SizingConfig};
 
