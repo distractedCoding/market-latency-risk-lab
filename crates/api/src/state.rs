@@ -1,6 +1,6 @@
 use std::sync::{
     atomic::{AtomicU64, Ordering},
-    Arc,
+    Arc, RwLock,
 };
 
 use tokio::sync::broadcast;
@@ -116,6 +116,8 @@ pub struct AppState {
     next_run_id: Arc<AtomicU64>,
     events_tx: broadcast::Sender<RuntimeEvent>,
     feed_mode: FeedMode,
+    source_counts: Arc<RwLock<Vec<SourceCount>>>,
+    discovered_markets: Arc<RwLock<Vec<DiscoveredMarket>>>,
 }
 
 impl Default for AppState {
@@ -125,6 +127,8 @@ impl Default for AppState {
             next_run_id: Arc::new(AtomicU64::new(0)),
             events_tx,
             feed_mode: FeedMode::PaperLive,
+            source_counts: Arc::new(RwLock::new(Vec::new())),
+            discovered_markets: Arc::new(RwLock::new(Vec::new())),
         }
     }
 }
@@ -159,13 +163,21 @@ impl AppState {
     pub fn feed_health(&self) -> FeedHealthResponse {
         FeedHealthResponse {
             mode: self.feed_mode,
-            source_counts: Vec::new(),
+            source_counts: self
+                .source_counts
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone(),
         }
     }
 
     pub fn discovered_markets(&self) -> DiscoveredMarketsResponse {
         DiscoveredMarketsResponse {
-            markets: Vec::new(),
+            markets: self
+                .discovered_markets
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clone(),
         }
     }
 
@@ -176,6 +188,8 @@ impl AppState {
             next_run_id: Arc::new(AtomicU64::new(next_run_id)),
             events_tx,
             feed_mode: FeedMode::PaperLive,
+            source_counts: Arc::new(RwLock::new(Vec::new())),
+            discovered_markets: Arc::new(RwLock::new(Vec::new())),
         }
     }
 
@@ -186,7 +200,41 @@ impl AppState {
             next_run_id: Arc::new(AtomicU64::new(0)),
             events_tx,
             feed_mode,
+            source_counts: Arc::new(RwLock::new(Vec::new())),
+            discovered_markets: Arc::new(RwLock::new(Vec::new())),
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_feed_data_for_test(
+        feed_mode: FeedMode,
+        source_counts: Vec<SourceCount>,
+        discovered_markets: Vec<DiscoveredMarket>,
+    ) -> Self {
+        let (events_tx, _) = broadcast::channel(256);
+        Self {
+            next_run_id: Arc::new(AtomicU64::new(0)),
+            events_tx,
+            feed_mode,
+            source_counts: Arc::new(RwLock::new(source_counts)),
+            discovered_markets: Arc::new(RwLock::new(discovered_markets)),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_feed_source_counts_for_test(&self, source_counts: Vec<SourceCount>) {
+        *self
+            .source_counts
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = source_counts;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_discovered_markets_for_test(&self, discovered_markets: Vec<DiscoveredMarket>) {
+        *self
+            .discovered_markets
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = discovered_markets;
     }
 }
 
@@ -194,7 +242,7 @@ impl AppState {
 mod tests {
     use std::sync::atomic::Ordering;
 
-    use super::{AppState, FeedMode};
+    use super::{AppState, DiscoveredMarket, FeedMode, SourceCount};
 
     #[test]
     fn start_run_returns_overflow_error_at_u64_max() {
@@ -209,5 +257,50 @@ mod tests {
         let state = AppState::with_feed_mode_for_test(FeedMode::Sim);
 
         assert_eq!(state.feed_health().mode, FeedMode::Sim);
+    }
+
+    #[test]
+    fn feed_health_and_discovered_markets_return_seeded_values() {
+        let state = AppState::with_feed_data_for_test(
+            FeedMode::PaperLive,
+            vec![SourceCount {
+                source: "polymarket".to_owned(),
+                count: 5,
+            }],
+            vec![DiscoveredMarket {
+                source: "polymarket".to_owned(),
+                market_id: "btc-up-down".to_owned(),
+            }],
+        );
+
+        assert_eq!(state.feed_health().source_counts.len(), 1);
+        assert_eq!(state.feed_health().source_counts[0].source, "polymarket");
+        assert_eq!(state.feed_health().source_counts[0].count, 5);
+        assert_eq!(state.discovered_markets().markets.len(), 1);
+        assert_eq!(
+            state.discovered_markets().markets[0].market_id,
+            "btc-up-down"
+        );
+    }
+
+    #[test]
+    fn test_setters_update_feed_snapshots() {
+        let state = AppState::new();
+        state.set_feed_source_counts_for_test(vec![SourceCount {
+            source: "kalshi".to_owned(),
+            count: 9,
+        }]);
+        state.set_discovered_markets_for_test(vec![DiscoveredMarket {
+            source: "kalshi".to_owned(),
+            market_id: "eth-up-down".to_owned(),
+        }]);
+
+        let feed_health = state.feed_health();
+        let discovered = state.discovered_markets();
+
+        assert_eq!(feed_health.source_counts[0].source, "kalshi");
+        assert_eq!(feed_health.source_counts[0].count, 9);
+        assert_eq!(discovered.markets[0].source, "kalshi");
+        assert_eq!(discovered.markets[0].market_id, "eth-up-down");
     }
 }

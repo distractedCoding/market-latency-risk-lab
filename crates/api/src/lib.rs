@@ -28,7 +28,10 @@ mod tests {
 
     use crate::{
         app, routes,
-        state::{AppState, FeedMode, PaperOrderSide, RuntimeEvent},
+        state::{
+            AppState, DiscoveredMarket as StateDiscoveredMarket, FeedMode, PaperOrderSide,
+            RuntimeEvent, SourceCount as StateSourceCount,
+        },
     };
 
     #[derive(Debug, Deserialize)]
@@ -184,35 +187,63 @@ mod tests {
 
     #[tokio::test]
     async fn get_feed_health_returns_typed_payload() {
-        let app = app();
+        let app = routes::router(AppState::with_feed_data_for_test(
+            FeedMode::Sim,
+            vec![
+                StateSourceCount {
+                    source: "polymarket".to_owned(),
+                    count: 12,
+                },
+                StateSourceCount {
+                    source: "kalshi".to_owned(),
+                    count: 4,
+                },
+            ],
+            vec![StateDiscoveredMarket {
+                source: "polymarket".to_owned(),
+                market_id: "btc-up-down".to_owned(),
+            }],
+        ));
         let response = send_get(&app, "/feed/health").await;
 
         assert_eq!(response.status(), StatusCode::OK);
         let payload: FeedHealthResponse = parse_json(response).await;
-        assert_eq!(payload.mode, FeedMode::PaperLive);
-        assert!(
-            payload
-                .source_counts
-                .iter()
-                .all(|source_count| !source_count.source.trim().is_empty())
-        );
+        assert_eq!(payload.mode, FeedMode::Sim);
+        assert_eq!(payload.source_counts.len(), 2);
+        assert_eq!(payload.source_counts[0].source, "polymarket");
+        assert_eq!(payload.source_counts[0].count, 12);
+        assert_eq!(payload.source_counts[1].source, "kalshi");
+        assert_eq!(payload.source_counts[1].count, 4);
     }
 
     #[tokio::test]
     async fn get_markets_discovered_returns_typed_payload() {
-        let app = app();
+        let app = routes::router(AppState::with_feed_data_for_test(
+            FeedMode::PaperLive,
+            vec![StateSourceCount {
+                source: "polymarket".to_owned(),
+                count: 3,
+            }],
+            vec![
+                StateDiscoveredMarket {
+                    source: "polymarket".to_owned(),
+                    market_id: "btc-up-down".to_owned(),
+                },
+                StateDiscoveredMarket {
+                    source: "polymarket".to_owned(),
+                    market_id: "eth-up-down".to_owned(),
+                },
+            ],
+        ));
         let response = send_get(&app, "/markets/discovered").await;
 
         assert_eq!(response.status(), StatusCode::OK);
         let payload: DiscoveredMarketsResponse = parse_json(response).await;
-        assert!(
-            payload
-                .markets
-                .iter()
-                .all(|market| {
-                    !market.source.trim().is_empty() && !market.market_id.trim().is_empty()
-                })
-        );
+        assert_eq!(payload.markets.len(), 2);
+        assert_eq!(payload.markets[0].source, "polymarket");
+        assert_eq!(payload.markets[0].market_id, "btc-up-down");
+        assert_eq!(payload.markets[1].source, "polymarket");
+        assert_eq!(payload.markets[1].market_id, "eth-up-down");
     }
 
     #[tokio::test]
