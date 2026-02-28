@@ -9,15 +9,15 @@ use std::path::Path;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use api::state::{
-    AppState, DiscoveredMarket, FeedMode, PaperOrderSide, PortfolioSummary, PriceSnapshot,
-    RuntimeEvent, SourceCount, StrategyPerfSummary,
+    AppState, BtcForecastSummary, DiscoveredMarket, ExecutionLogEntry,
+    ExecutionMode as StateExecutionMode, FeedMode, PaperOrderSide, PortfolioSummary, PriceSnapshot,
+    RuntimeEvent, RuntimeSettings, SourceCount, StrategyPerfSummary, StrategyStatsSummary,
 };
-use config::ExecutionMode;
+use config::ExecutionMode as ConfigExecutionMode;
 use reqwest::Client;
 use runtime::events::RuntimeStage;
 use runtime::live::{
-    filter_markets, fuse_predictors, BtcMedianTick, PolymarketMarket, PolymarketQuoteTick,
-    PredictorTick, RawPolymarketQuote,
+    fuse_predictors, BtcMedianTick, PolymarketQuoteTick, PredictorTick, RawPolymarketQuote,
 };
 use runtime::live_runner::{run_paper_live_once_with_lag, JoinedLiveInputs};
 use runtime::logging::{PaperJournalRow, PaperJournalRowKind};
@@ -27,7 +27,7 @@ use tokio::net::TcpListener;
 use tokio::time::{self, Duration, MissedTickBehavior};
 
 const BOOTSTRAP_ROWS_ENV: &str = "LAB_SERVER_INITIAL_PAPER_JOURNAL_ROWS";
-const PAPER_MARKET_ID: &str = "btc-up-down";
+const PAPER_MARKET_ID: &str = "btc-15m-forecast";
 const PAPER_ORDER_QTY: f64 = 1.0;
 const LIVE_LOOP_INTERVAL_MS: u64 = 1500;
 const POLY_REFRESH_EVERY_TICKS: u64 = 10;
@@ -43,12 +43,65 @@ const DEFAULT_STARTING_EQUITY: f64 = 10_000.0;
 
 #[derive(Debug, Clone, Copy)]
 struct RuntimeTradingConfig {
-    execution_mode: ExecutionMode,
     live_feature_enabled: bool,
-    lag_threshold_pct: f64,
-    per_trade_risk_fraction: f64,
-    daily_loss_cap_fraction: f64,
     starting_equity: f64,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct TradeOutcomeTracker {
+    open_qty: f64,
+    avg_entry: f64,
+    winning_closes: u64,
+    losing_closes: u64,
+}
+
+impl TradeOutcomeTracker {
+    fn apply_fill(&mut self, side: PaperOrderSide, fill_px: f64, qty: f64) {
+        let signed_qty = match side {
+            PaperOrderSide::Buy => qty,
+            PaperOrderSide::Sell => -qty,
+        };
+
+        if self.open_qty == 0.0 || self.open_qty.signum() == signed_qty.signum() {
+            let total_qty = self.open_qty.abs() + signed_qty.abs();
+            if total_qty > 0.0 {
+                let weighted_cost =
+                    (self.avg_entry * self.open_qty.abs()) + (fill_px * signed_qty.abs());
+                self.avg_entry = weighted_cost / total_qty;
+            }
+            self.open_qty += signed_qty;
+            return;
+        }
+
+        let close_qty = self.open_qty.abs().min(signed_qty.abs());
+        let realized = if self.open_qty > 0.0 {
+            (fill_px - self.avg_entry) * close_qty
+        } else {
+            (self.avg_entry - fill_px) * close_qty
+        };
+
+        if realized > 0.0 {
+            self.winning_closes = self.winning_closes.saturating_add(1);
+        } else if realized < 0.0 {
+            self.losing_closes = self.losing_closes.saturating_add(1);
+        }
+
+        self.open_qty += signed_qty;
+        if self.open_qty == 0.0 {
+            self.avg_entry = 0.0;
+        } else if self.open_qty.signum() == signed_qty.signum() && signed_qty.abs() > close_qty {
+            self.avg_entry = fill_px;
+        }
+    }
+
+    fn win_rate_pct(self) -> f64 {
+        let total = self.winning_closes + self.losing_closes;
+        if total == 0 {
+            return 0.0;
+        }
+
+        (self.winning_closes as f64 / total as f64) * 100.0
+    }
 }
 
 #[derive(Default)]
@@ -131,17 +184,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } = config::Config::from_env()?;
 
     let runtime_trading_config = RuntimeTradingConfig {
-        execution_mode,
         live_feature_enabled,
-        lag_threshold_pct,
-        per_trade_risk_fraction: per_trade_risk_pct / 100.0,
-        daily_loss_cap_fraction: daily_loss_cap_pct / 100.0,
         starting_equity: DEFAULT_STARTING_EQUITY,
     };
 
     println!("{}", startup_mode_banner(mode));
     initialize_replay_output(&replay_output_path)?;
     let app_state = AppState::new();
+    app_state.set_runtime_settings(RuntimeSettings {
+        execution_mode: to_state_execution_mode(execution_mode),
+        trading_paused: false,
+        lag_threshold_pct,
+        risk_per_trade_pct: per_trade_risk_pct,
+        daily_loss_cap_pct,
+        market: "BTC/USD".to_string(),
+        forecast_horizon_minutes: 15,
+        live_feature_enabled,
+    });
 
     if mode == config::RunMode::PaperLive {
         let client = Client::builder()
@@ -173,6 +232,8 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
     let mut cash = runtime_cfg.starting_equity;
     let mut position_qty = 0.0_f64;
     let mut fills = 0_u64;
+    let mut outcomes = TradeOutcomeTracker::default();
+    let mut last_pause_state = false;
 
     state.set_discovered_markets(vec![DiscoveredMarket {
         source: "polymarket".to_string(),
@@ -216,6 +277,18 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
             _ => 0.0,
         };
         last_btc_median = Some(btc_median);
+
+        let settings = state.runtime_settings();
+        let (forecast_btc_usd, forecast_delta_pct) = forecast_btc_15m(btc_median, spread_signal);
+        let forecast_summary = BtcForecastSummary {
+            horizon_minutes: 15,
+            current_btc_usd: btc_median,
+            forecast_btc_usd,
+            delta_pct: forecast_delta_pct,
+            ts: tick,
+        };
+        state.set_btc_forecast_summary(forecast_summary);
+        let _ = state.publish_event(RuntimeEvent::btc_forecast(forecast_summary));
 
         if tick == 1 || tick % POLY_REFRESH_EVERY_TICKS == 0 || tracked_quotes.is_empty() {
             if let Some(snapshot) = fetch_polymarket_snapshot(&client, tick).await {
@@ -277,18 +350,47 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
             .unwrap_or(0.5);
         let equity_before = cash + (position_qty * current_mark);
         let pnl_before = equity_before - runtime_cfg.starting_equity;
-        let daily_loss_limit = runtime_cfg.starting_equity * runtime_cfg.daily_loss_cap_fraction;
+        let daily_loss_limit = runtime_cfg.starting_equity * (settings.daily_loss_cap_pct / 100.0);
         let daily_halted = pnl_before <= -daily_loss_limit;
 
         let decision_started = Instant::now();
 
+        if settings.trading_paused != last_pause_state {
+            let status = if settings.trading_paused {
+                "Trading Paused"
+            } else {
+                "Trading Resumed"
+            };
+            let log = ExecutionLogEntry {
+                ts: tick,
+                event: "pause_state".to_string(),
+                headline: status.to_string(),
+                detail: format!("execution_mode={:?}", settings.execution_mode),
+            };
+            state.push_execution_log(log.clone(), 500);
+            let _ = state.publish_event(RuntimeEvent::execution_log(log));
+            last_pause_state = settings.trading_paused;
+        }
+
         for quote in tracked_quotes.iter().take(MAX_TRACKED_POLY_MARKETS) {
+            if settings.trading_paused {
+                continue;
+            }
+
             if daily_halted {
                 let _ = state.publish_event(RuntimeEvent::risk_reject(
                     &quote.market_slug,
                     "daily loss cap reached",
                     PAPER_ORDER_QTY,
                 ));
+                let log = ExecutionLogEntry {
+                    ts: tick,
+                    event: "risk_reject".to_string(),
+                    headline: "Daily Cap Halt".to_string(),
+                    detail: format!("{} qty={}", quote.market_slug, PAPER_ORDER_QTY),
+                };
+                state.push_execution_log(log.clone(), 500);
+                let _ = state.publish_event(RuntimeEvent::execution_log(log));
                 continue;
             }
 
@@ -309,10 +411,10 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
                 tick,
                 &joined,
                 fair_yes_px,
-                runtime_cfg.lag_threshold_pct,
-                runtime_cfg.per_trade_risk_fraction,
+                settings.lag_threshold_pct,
+                settings.risk_per_trade_pct / 100.0,
                 runtime_cfg.starting_equity,
-                runtime_cfg.daily_loss_cap_fraction,
+                settings.daily_loss_cap_pct / 100.0,
             );
             let has_intent = runtime_events
                 .iter()
@@ -339,12 +441,23 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
                 PAPER_ORDER_QTY,
                 limit_px,
             ));
+            let intent_log = ExecutionLogEntry {
+                ts: tick,
+                event: "paper_intent".to_string(),
+                headline: format!("Intent {:?}", side),
+                detail: format!(
+                    "{} qty={} @ {:.4}",
+                    quote.market_slug, PAPER_ORDER_QTY, limit_px
+                ),
+            };
+            state.push_execution_log(intent_log.clone(), 500);
+            let _ = state.publish_event(RuntimeEvent::execution_log(intent_log));
 
             let has_fill = runtime_events
                 .iter()
                 .any(|event| event.stage == RuntimeStage::PaperFillRecorded);
             if has_fill {
-                if runtime_cfg.execution_mode == ExecutionMode::Live
+                if settings.execution_mode == StateExecutionMode::Live
                     && !runtime_cfg.live_feature_enabled
                 {
                     let _ = state.publish_event(RuntimeEvent::risk_reject(
@@ -352,6 +465,14 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
                         "live mode disabled by feature flag",
                         PAPER_ORDER_QTY,
                     ));
+                    let log = ExecutionLogEntry {
+                        ts: tick,
+                        event: "risk_reject".to_string(),
+                        headline: "Live Mode Blocked".to_string(),
+                        detail: "Enable LAB_LIVE_FEATURE_ENABLED to allow live mode".to_string(),
+                    };
+                    state.push_execution_log(log.clone(), 500);
+                    let _ = state.publish_event(RuntimeEvent::execution_log(log));
                     continue;
                 }
 
@@ -370,6 +491,7 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
                 }
                 fills = fills.saturating_add(1);
                 tick_fills = tick_fills.saturating_add(1);
+                outcomes.apply_fill(side, fill_px, PAPER_ORDER_QTY);
 
                 let _ = state.publish_event(RuntimeEvent::paper_fill(
                     &quote.market_slug,
@@ -377,19 +499,41 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
                     PAPER_ORDER_QTY,
                     fill_px,
                 ));
+                let fill_log = ExecutionLogEntry {
+                    ts: tick,
+                    event: "paper_fill".to_string(),
+                    headline: format!("Filled {:?}", side),
+                    detail: format!(
+                        "{} qty={} @ {:.4}",
+                        quote.market_slug, PAPER_ORDER_QTY, fill_px
+                    ),
+                };
+                state.push_execution_log(fill_log.clone(), 500);
+                let _ = state.publish_event(RuntimeEvent::execution_log(fill_log));
             } else {
                 let _ = state.publish_event(RuntimeEvent::risk_reject(
                     &quote.market_slug,
                     "risk gate rejected",
                     PAPER_ORDER_QTY,
                 ));
+                let reject_log = ExecutionLogEntry {
+                    ts: tick,
+                    event: "risk_reject".to_string(),
+                    headline: "Risk Rejected".to_string(),
+                    detail: format!("{} qty={}", quote.market_slug, PAPER_ORDER_QTY),
+                };
+                state.push_execution_log(reject_log.clone(), 500);
+                let _ = state.publish_event(RuntimeEvent::execution_log(reject_log));
             }
         }
 
         let throughput_scale = 1000.0 / (LIVE_LOOP_INTERVAL_MS as f64);
         let perf_summary = StrategyPerfSummary {
-            execution_mode: runtime_cfg.execution_mode.as_str().to_string(),
-            lag_threshold_pct: runtime_cfg.lag_threshold_pct,
+            execution_mode: match settings.execution_mode {
+                StateExecutionMode::Paper => "paper".to_string(),
+                StateExecutionMode::Live => "live".to_string(),
+            },
+            lag_threshold_pct: settings.lag_threshold_pct,
             decision_p95_us: decision_started.elapsed().as_micros() as u64,
             intents_per_sec: ((tick_intents as f64) * throughput_scale).round() as u64,
             fills_per_sec: ((tick_fills as f64) * throughput_scale).round() as u64,
@@ -410,6 +554,17 @@ async fn run_paper_live_loop(state: AppState, client: Client, runtime_cfg: Runti
             position_qty,
             fills,
         };
+
+        let stats_summary = StrategyStatsSummary {
+            balance: equity,
+            total_pnl: summary.pnl,
+            exec_latency_us: decision_started.elapsed().as_micros() as u64,
+            win_rate: outcomes.win_rate_pct(),
+            btc_usd: btc_median,
+        };
+        state.set_strategy_stats_summary(stats_summary);
+        let _ = state.publish_event(RuntimeEvent::strategy_stats(stats_summary));
+
         state.set_portfolio_summary(summary);
         let _ = state.publish_event(RuntimeEvent::portfolio_snapshot(summary));
     }
@@ -424,6 +579,20 @@ fn now_unix_ms() -> u64 {
 
 fn fallback_fair_yes_from_spread(poly_mid_yes: f64, spread_signal: f64) -> f64 {
     (poly_mid_yes + (spread_signal * SPREAD_SIGNAL_TO_YES_COEFF)).clamp(0.0, 1.0)
+}
+
+fn forecast_btc_15m(current_btc_usd: f64, spread_signal: f64) -> (f64, f64) {
+    let immediate_bps = spread_signal / BTC_MOMENTUM_MULTIPLIER;
+    let projected_pct = ((immediate_bps * 15.0) / 10_000.0).clamp(-0.01, 0.01);
+    let forecast = current_btc_usd * (1.0 + projected_pct);
+    (forecast, projected_pct * 100.0)
+}
+
+fn to_state_execution_mode(mode: ConfigExecutionMode) -> StateExecutionMode {
+    match mode {
+        ConfigExecutionMode::Paper => StateExecutionMode::Paper,
+        ConfigExecutionMode::Live => StateExecutionMode::Live,
+    }
 }
 
 async fn fetch_tradingview_predictor(client: &Client, ts_ms: u64) -> Option<PredictorTick> {
@@ -515,34 +684,11 @@ async fn fetch_polymarket_snapshot(client: &Client, tick: u64) -> Option<Polymar
         .ok()?;
     let markets: Vec<GammaMarket> = response.json().await.ok()?;
 
-    let candidates = markets
-        .iter()
-        .map(|market| PolymarketMarket {
-            slug: format!(
-                "{} {}",
-                market.slug.to_ascii_lowercase(),
-                market.question.to_ascii_lowercase()
-            ),
-        })
-        .collect::<Vec<_>>();
-    let mut bitcoin_candidates = filter_markets(candidates.clone(), "btc");
-    if bitcoin_candidates.is_empty() {
-        bitcoin_candidates = filter_markets(candidates, "bitcoin");
-    }
-
     let mut discovered = Vec::new();
     let mut quotes = Vec::new();
 
     for market in markets.iter() {
-        let haystack = format!(
-            "{} {}",
-            market.slug.to_ascii_lowercase(),
-            market.question.to_ascii_lowercase()
-        );
-        if !bitcoin_candidates
-            .iter()
-            .any(|candidate| candidate.slug == haystack)
-        {
+        if !is_btc_15m_market(&market.slug, &market.question) {
             continue;
         }
 
@@ -564,6 +710,34 @@ async fn fetch_polymarket_snapshot(client: &Client, tick: u64) -> Option<Polymar
     }
 
     Some(PolymarketSnapshot { discovered, quotes })
+}
+
+fn is_btc_15m_market(slug: &str, question: &str) -> bool {
+    let haystack = format!(
+        "{} {}",
+        slug.to_ascii_lowercase(),
+        question.to_ascii_lowercase()
+    );
+
+    let has_btc = haystack.contains("btc") || haystack.contains("bitcoin");
+    if !has_btc {
+        return false;
+    }
+
+    const FIFTEEN_MINUTE_TOKENS: [&str; 8] = [
+        "15m",
+        "15-min",
+        "15 min",
+        "15 minute",
+        "15-minute",
+        "15 minutes",
+        "next 15",
+        "in 15",
+    ];
+
+    FIFTEEN_MINUTE_TOKENS
+        .iter()
+        .any(|token| haystack.contains(token))
 }
 
 fn gamma_market_to_quote(market: &GammaMarket, tick: u64) -> Option<PolymarketQuoteTick> {
@@ -757,8 +931,8 @@ mod tests {
     use runtime::replay::REPLAY_CSV_HEADER;
 
     use super::{
-        initial_paper_journal_rows, initialize_replay_output, median_f64, parse_probability_str,
-        startup_mode_banner,
+        initial_paper_journal_rows, initialize_replay_output, is_btc_15m_market, median_f64,
+        parse_probability_str, startup_mode_banner,
     };
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -887,5 +1061,25 @@ mod tests {
         assert_eq!(parse_probability_str("1.1"), None);
         assert_eq!(parse_probability_str("-0.1"), None);
         assert_eq!(parse_probability_str("0.42"), Some(0.42));
+    }
+
+    #[test]
+    fn btc_15m_market_filter_accepts_matching_market() {
+        assert!(is_btc_15m_market(
+            "bitcoin-15m-forecast",
+            "Will BTC be above 66k in the next 15 minutes?"
+        ));
+    }
+
+    #[test]
+    fn btc_15m_market_filter_rejects_non_15m_or_non_btc_market() {
+        assert!(!is_btc_15m_market(
+            "bitcoin-daily-forecast",
+            "Will BTC be above 70k tomorrow?"
+        ));
+        assert!(!is_btc_15m_market(
+            "eth-15m-forecast",
+            "Will ETH rise in 15 minutes?"
+        ));
     }
 }

@@ -11,101 +11,106 @@
     <header class="hero">
       <p class="eyebrow">Paper-Live Mode</p>
       <h1>Market Latency Risk Lab</h1>
-      <p class="subtitle">Live telemetry from <code>/ws/events</code> with real BTC + Polymarket data ingestion.</p>
+      <p class="subtitle">BTC-only strategy dashboard with 15-minute forecast telemetry and live updates from <code>/ws/events</code>.</p>
+      <p id="connection-status" class="pill state-pending">Connecting...</p>
     </header>
 
-    <section class="kpi-grid">
+    <section class="kpi-strip" aria-label="top kpis">
       <article class="kpi-card">
-        <p class="kpi-label">Connection</p>
-        <p id="connection-status" class="pill state-pending">Connecting...</p>
+        <p class="kpi-label">Balance</p>
+        <p id="kpi-balance" class="kpi-value">$0.00</p>
       </article>
       <article class="kpi-card">
-        <p class="kpi-label">Money Made</p>
-        <p id="money-made" class="kpi-value">$0.00</p>
+        <p class="kpi-label">Total P&amp;L</p>
+        <p id="kpi-total-pnl" class="kpi-value">$0.00</p>
       </article>
       <article class="kpi-card">
-        <p class="kpi-label">Open Position</p>
-        <p id="open-position" class="kpi-value">0.00</p>
+        <p class="kpi-label">Exec Latency</p>
+        <p id="kpi-exec-latency" class="kpi-value">0 us</p>
       </article>
       <article class="kpi-card">
-        <p class="kpi-label">Total Fills</p>
-        <p id="total-fills" class="kpi-value">0</p>
+        <p class="kpi-label">Win Rate</p>
+        <p id="kpi-win-rate" class="kpi-value">0.0%</p>
+      </article>
+      <article class="kpi-card">
+        <p class="kpi-label">BTC/USD</p>
+        <p id="kpi-btc-usd" class="kpi-value">--</p>
       </article>
     </section>
 
-    <section class="panel-grid">
-      <article class="panel prices-panel">
-        <div class="panel-header-row">
-          <h2>Live Prices</h2>
-          <p id="prices-updated" class="mono">Waiting for snapshot...</p>
+    <section class="workspace-grid">
+      <aside class="panel settings-panel">
+        <h2>Strategy Settings</h2>
+        <form id="settings-form" class="settings-form">
+          <label class="field-label" for="settings-execution-mode">Execution Mode</label>
+          <select id="settings-execution-mode" name="execution_mode">
+            <option value="paper">paper</option>
+            <option value="live">live</option>
+          </select>
+
+          <label class="checkbox-row" for="settings-trading-paused">
+            <input id="settings-trading-paused" type="checkbox" name="trading_paused">
+            <span>Trading Paused</span>
+          </label>
+
+          <label class="field-label" for="settings-lag-threshold">Lag Threshold %</label>
+          <input id="settings-lag-threshold" name="lag_threshold_pct" type="number" min="0.01" step="0.01">
+
+          <label class="field-label" for="settings-risk-per-trade">Risk Per Trade %</label>
+          <input id="settings-risk-per-trade" name="risk_per_trade_pct" type="number" min="0.01" step="0.01">
+
+          <label class="field-label" for="settings-daily-loss-cap">Daily Loss Cap %</label>
+          <input id="settings-daily-loss-cap" name="daily_loss_cap_pct" type="number" min="0.01" step="0.01">
+
+          <button id="settings-apply" type="submit">Apply Settings</button>
+        </form>
+        <div class="settings-meta">
+          <p class="mono" id="settings-market">Market: BTC/USD</p>
+          <p class="mono" id="settings-horizon">Forecast Horizon: 15m</p>
+          <p class="mono" id="settings-status">Waiting for settings...</p>
         </div>
-        <p id="price-poly-market" class="mono price-market">market: --</p>
-        <div class="price-grid" aria-label="live prices">
-          <div class="price-row">
-            <p class="price-label">Coinbase BTC/USD</p>
-            <p id="price-coinbase" class="price-value">--</p>
-            <p id="trend-coinbase" class="trend-pill trend-flat">flat</p>
-          </div>
-          <div class="price-row">
-            <p class="price-label">Binance BTC/USDT</p>
-            <p id="price-binance" class="price-value">--</p>
-            <p id="trend-binance" class="trend-pill trend-flat">flat</p>
-          </div>
-          <div class="price-row">
-            <p class="price-label">Kraken XBT/USD</p>
-            <p id="price-kraken" class="price-value">--</p>
-            <p id="trend-kraken" class="trend-pill trend-flat">flat</p>
-          </div>
-          <div class="price-row">
-            <p class="price-label">Polymarket YES Mid</p>
-            <p id="price-poly-mid" class="price-value">--</p>
-            <p id="trend-poly-mid" class="trend-pill trend-flat">flat</p>
-          </div>
-          <div class="price-row">
-            <p class="price-label">Polymarket YES Bid</p>
-            <p id="price-poly-bid" class="price-value">--</p>
-            <p class="trend-pill trend-static">bid</p>
-          </div>
-          <div class="price-row">
-            <p class="price-label">Polymarket YES Ask</p>
-            <p id="price-poly-ask" class="price-value">--</p>
-            <p class="trend-pill trend-static">ask</p>
-          </div>
-        </div>
-      </article>
+      </aside>
 
-      <article class="panel chart-panel">
-        <div class="panel-header-row">
-          <h2>Equity Curve</h2>
-          <p id="equity-latest" class="mono">equity: 0.00</p>
-        </div>
-        <canvas id="equity-chart" width="640" height="220" aria-label="equity chart"></canvas>
-      </article>
+      <section class="middle-dashboard">
+        <article class="panel forecast-panel">
+          <div class="panel-header-row">
+            <h2>BTC 15m Forecast</h2>
+            <p id="forecast-updated" class="mono">Waiting for forecast...</p>
+          </div>
+          <div class="forecast-grid">
+            <div>
+              <p class="kpi-label">Current BTC/USD</p>
+              <p id="forecast-current" class="kpi-value">--</p>
+            </div>
+            <div>
+              <p class="kpi-label">Forecast BTC/USD</p>
+              <p id="forecast-target" class="kpi-value">--</p>
+            </div>
+            <div>
+              <p class="kpi-label">Delta</p>
+              <p id="forecast-delta" class="kpi-value">0.00%</p>
+            </div>
+          </div>
+        </article>
 
-      <article class="panel">
-        <h2>Feed Health</h2>
-        <p id="feed-health" class="mono">Waiting for feed snapshot...</p>
-      </article>
+        <article class="panel chart-panel">
+          <div class="panel-header-row">
+            <h2>Equity Curve</h2>
+            <p id="equity-latest" class="mono">equity: 0.00</p>
+          </div>
+          <canvas id="equity-chart" width="700" height="250" aria-label="equity chart"></canvas>
+        </article>
 
-      <article class="panel">
-        <h2>Paper Fills</h2>
-        <div class="stat-grid">
-          <p class="mono stat-label">Count</p>
-          <p id="paper-fills-count" class="mono stat-value">0</p>
-          <p class="mono stat-label">Last Fill</p>
-          <p id="paper-fills-last" class="mono stat-value">None</p>
-        </div>
-      </article>
+        <article class="panel">
+          <h2>Feed Health</h2>
+          <p id="feed-health" class="mono">Waiting for feed snapshot...</p>
+        </article>
+      </section>
 
-      <article class="panel">
-        <h2>Last Event</h2>
-        <p id="last-event" class="mono">Waiting for data...</p>
-      </article>
-    </section>
-
-    <section class="panel">
-      <h2>Event Feed</h2>
-      <ul id="event-feed" class="feed"></ul>
+      <aside class="panel logs-panel">
+        <h2>Execution Logs</h2>
+        <div id="execution-logs" class="chat-log" aria-live="polite"></div>
+      </aside>
     </section>
   </main>
 

@@ -31,19 +31,10 @@ mod tests {
     fn ui_shell_contains_paper_live_panels() {
         let html = index_html();
         assert!(html.contains("Feed Health"));
-        assert!(html.contains("Paper Fills"));
-        assert!(html.contains("Money Made"));
+        assert!(html.contains("Strategy Settings"));
+        assert!(html.contains("BTC 15m Forecast"));
         assert!(html.contains("Equity Curve"));
-    }
-
-    #[test]
-    fn ui_shell_contains_live_prices_panel() {
-        let html = index_html();
-        assert!(html.contains("Live Prices"));
-        assert!(html.contains("Coinbase BTC/USD"));
-        assert!(html.contains("Binance BTC/USDT"));
-        assert!(html.contains("Kraken XBT/USD"));
-        assert!(html.contains("Polymarket YES"));
+        assert!(html.contains("Execution Logs"));
     }
 
     #[test]
@@ -77,5 +68,39 @@ mod tests {
 
         assert!(js.contains("price_snapshot"));
         assert!(js.contains("/prices/snapshot"));
+    }
+
+    #[test]
+    fn ui_shell_contains_top_kpis_requested_by_user() {
+        let html = index_html();
+
+        assert!(html.contains("Balance"));
+        assert!(html.contains("Total P&amp;L"));
+        assert!(html.contains("Exec Latency"));
+        assert!(html.contains("Win Rate"));
+        assert!(html.contains("BTC/USD"));
+    }
+
+    #[test]
+    fn ui_shell_contains_settings_dashboard_and_chat_logs_regions() {
+        let html = index_html();
+
+        assert!(html.contains("Strategy Settings"));
+        assert!(html.contains("BTC 15m Forecast"));
+        assert!(html.contains("Execution Logs"));
+    }
+
+    #[test]
+    fn app_js_patches_settings_and_routes_new_telemetry() {
+        let js = app_js();
+
+        assert!(js.contains("/settings"));
+        assert!(js.contains("PATCH"));
+        assert!(js.contains("/strategy/stats"));
+        assert!(js.contains("/forecast/btc-15m"));
+        assert!(js.contains("settings_updated"));
+        assert!(js.contains("strategy_stats"));
+        assert!(js.contains("btc_forecast"));
+        assert!(js.contains("execution_log"));
     }
 }

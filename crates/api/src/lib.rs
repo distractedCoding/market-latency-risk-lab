@@ -121,6 +121,22 @@ mod tests {
             .unwrap()
     }
 
+    async fn send_patch_json(
+        app: &axum::Router,
+        path: &str,
+        payload: Value,
+    ) -> axum::response::Response {
+        app.clone()
+            .oneshot(
+                Request::patch(path)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(payload.to_string()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+
     async fn parse_json<T: serde::de::DeserializeOwned>(response: axum::response::Response) -> T {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         serde_json::from_slice(&body).unwrap()
@@ -344,6 +360,88 @@ mod tests {
         assert_eq!(payload.fills_per_sec, 840);
         assert_eq!(payload.lag_triggers, 15);
         assert!(!payload.halted);
+    }
+
+    #[tokio::test]
+    async fn get_settings_returns_runtime_controls() {
+        let app = app();
+
+        let response = send_get(&app, "/settings").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: Value = parse_json(response).await;
+        assert_eq!(payload["execution_mode"], "paper");
+        assert_eq!(payload["market"], "BTC/USD");
+        assert_eq!(payload["forecast_horizon_minutes"], 15);
+    }
+
+    #[tokio::test]
+    async fn patch_settings_updates_runtime_controls() {
+        let app = app();
+
+        let response = send_patch_json(
+            &app,
+            "/settings",
+            serde_json::json!({
+                "trading_paused": true,
+                "lag_threshold_pct": 0.45,
+                "risk_per_trade_pct": 0.6,
+                "daily_loss_cap_pct": 2.5
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: Value = parse_json(response).await;
+        assert_eq!(payload["trading_paused"], true);
+        assert_eq!(payload["lag_threshold_pct"].as_f64(), Some(0.45));
+        assert_eq!(payload["risk_per_trade_pct"].as_f64(), Some(0.6));
+        assert_eq!(payload["daily_loss_cap_pct"].as_f64(), Some(2.5));
+    }
+
+    #[tokio::test]
+    async fn patch_settings_rejects_live_mode_when_feature_disabled() {
+        let app = app();
+
+        let response = send_patch_json(
+            &app,
+            "/settings",
+            serde_json::json!({
+                "execution_mode": "live"
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn get_strategy_stats_returns_top_kpis() {
+        let app = app();
+
+        let response = send_get(&app, "/strategy/stats").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: Value = parse_json(response).await;
+        assert!(payload.get("balance").is_some());
+        assert!(payload.get("total_pnl").is_some());
+        assert!(payload.get("exec_latency_us").is_some());
+        assert!(payload.get("win_rate").is_some());
+        assert!(payload.get("btc_usd").is_some());
+    }
+
+    #[tokio::test]
+    async fn get_btc_15m_forecast_returns_fixed_horizon_payload() {
+        let app = app();
+
+        let response = send_get(&app, "/forecast/btc-15m").await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let payload: Value = parse_json(response).await;
+        assert_eq!(payload["horizon_minutes"], 15);
+        assert!(payload.get("current_btc_usd").is_some());
+        assert!(payload.get("forecast_btc_usd").is_some());
+        assert!(payload.get("delta_pct").is_some());
     }
 
     #[tokio::test]

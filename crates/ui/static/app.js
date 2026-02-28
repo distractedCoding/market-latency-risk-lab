@@ -1,46 +1,55 @@
 const statusEl = document.getElementById("connection-status");
-const lastEventEl = document.getElementById("last-event");
-const feedEl = document.getElementById("event-feed");
+
+const kpiBalanceEl = document.getElementById("kpi-balance");
+const kpiTotalPnlEl = document.getElementById("kpi-total-pnl");
+const kpiExecLatencyEl = document.getElementById("kpi-exec-latency");
+const kpiWinRateEl = document.getElementById("kpi-win-rate");
+const kpiBtcUsdEl = document.getElementById("kpi-btc-usd");
+
+const settingsFormEl = document.getElementById("settings-form");
+const settingsModeEl = document.getElementById("settings-execution-mode");
+const settingsPausedEl = document.getElementById("settings-trading-paused");
+const settingsLagEl = document.getElementById("settings-lag-threshold");
+const settingsRiskEl = document.getElementById("settings-risk-per-trade");
+const settingsDailyEl = document.getElementById("settings-daily-loss-cap");
+const settingsMarketEl = document.getElementById("settings-market");
+const settingsHorizonEl = document.getElementById("settings-horizon");
+const settingsStatusEl = document.getElementById("settings-status");
+
+const forecastCurrentEl = document.getElementById("forecast-current");
+const forecastTargetEl = document.getElementById("forecast-target");
+const forecastDeltaEl = document.getElementById("forecast-delta");
+const forecastUpdatedEl = document.getElementById("forecast-updated");
+
 const feedHealthEl = document.getElementById("feed-health");
+const logsEl = document.getElementById("execution-logs");
 
-const paperFillsCountEl = document.getElementById("paper-fills-count");
-const paperFillsLastEl = document.getElementById("paper-fills-last");
-
-const moneyMadeEl = document.getElementById("money-made");
-const openPositionEl = document.getElementById("open-position");
-const totalFillsEl = document.getElementById("total-fills");
 const equityLatestEl = document.getElementById("equity-latest");
 const equityChartEl = document.getElementById("equity-chart");
 
-const pricesUpdatedEl = document.getElementById("prices-updated");
-const pricePolyMarketEl = document.getElementById("price-poly-market");
-const priceCoinbaseEl = document.getElementById("price-coinbase");
-const priceBinanceEl = document.getElementById("price-binance");
-const priceKrakenEl = document.getElementById("price-kraken");
-const pricePolyMidEl = document.getElementById("price-poly-mid");
-const pricePolyBidEl = document.getElementById("price-poly-bid");
-const pricePolyAskEl = document.getElementById("price-poly-ask");
-
-const trendCoinbaseEl = document.getElementById("trend-coinbase");
-const trendBinanceEl = document.getElementById("trend-binance");
-const trendKrakenEl = document.getElementById("trend-kraken");
-const trendPolyMidEl = document.getElementById("trend-poly-mid");
-
 const fetchFeedHealthIntervalMs = 5000;
 const fetchPortfolioIntervalMs = 3000;
-const fetchPriceSnapshotIntervalMs = 3000;
-const priceFreshnessCheckIntervalMs = 1500;
-const stalePriceThresholdMs = 10000;
-const maxEquityPoints = 180;
+const fetchPriceSnapshotIntervalMs = 4000;
+const fetchSettingsIntervalMs = 10000;
+const fetchStatsIntervalMs = 3000;
+const fetchForecastIntervalMs = 3000;
+const fetchLogsIntervalMs = 6000;
+const maxChartPoints = 180;
+const maxChatItems = 140;
 
-let paperFillCount = 0;
 let feedHealthPollInFlight = false;
 let portfolioPollInFlight = false;
 let priceSnapshotPollInFlight = false;
-let lastPriceUpdateAtMs = 0;
-let lastPriceStatusLabel = "Waiting for snapshot...";
+let settingsPollInFlight = false;
+let settingsPatchInFlight = false;
+let statsPollInFlight = false;
+let forecastPollInFlight = false;
+let logsPollInFlight = false;
+
+let latestBtcUsd = null;
+
 const equityPoints = [];
-const lastDirectionalValues = new Map();
+const seenLogKeys = new Set();
 
 function setStatus(text, className) {
   if (!statusEl) {
@@ -50,26 +59,36 @@ function setStatus(text, className) {
   statusEl.className = `pill ${className}`;
 }
 
-function pushEvent(payload) {
-  if (!feedEl) {
-    return;
+function formatUsd(value) {
+  if (!Number.isFinite(value)) {
+    return "--";
   }
-
-  const item = document.createElement("li");
-  item.textContent = payload;
-  feedEl.prepend(item);
-
-  while (feedEl.children.length > 24) {
-    feedEl.removeChild(feedEl.lastElementChild);
-  }
+  return `$${value.toFixed(2)}`;
 }
 
-function maybeParseJson(raw) {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return null;
+function formatSignedUsd(value) {
+  if (!Number.isFinite(value)) {
+    return "$0.00";
   }
+  const sign = value >= 0 ? "+" : "-";
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
+}
+
+function formatPct(value) {
+  if (!Number.isFinite(value)) {
+    return "0.00%";
+  }
+  return `${value.toFixed(2)}%`;
+}
+
+function formatTs(ts) {
+  if (!Number.isFinite(ts)) {
+    return new Date().toLocaleTimeString();
+  }
+  if (ts > 1_000_000_000_000) {
+    return new Date(ts).toLocaleTimeString();
+  }
+  return `t${Math.floor(ts)}`;
 }
 
 function asFiniteNumber(value) {
@@ -79,166 +98,257 @@ function asFiniteNumber(value) {
   return value;
 }
 
-function formatMoney(value) {
-  if (!Number.isFinite(value)) {
-    return "$0.00";
-  }
-  const sign = value >= 0 ? "+" : "-";
-  return `${sign}$${Math.abs(value).toFixed(2)}`;
-}
-
-function formatFixed(value, digits) {
-  if (!Number.isFinite(value)) {
-    return "0.00";
-  }
-  return value.toFixed(digits);
-}
-
-function formatUsd(value) {
-  if (!Number.isFinite(value)) {
-    return "--";
-  }
-  return `$${value.toFixed(2)}`;
-}
-
-function formatProbability(value) {
-  if (!Number.isFinite(value)) {
-    return "--";
-  }
-  return `${value.toFixed(3)} (${(value * 100).toFixed(1)}%)`;
-}
-
-function setTrend(trendEl, direction) {
-  if (!trendEl) {
-    return;
-  }
-  trendEl.textContent = direction;
-  trendEl.className = `trend-pill trend-${direction}`;
-}
-
-function setDirectionalValue(key, value, valueEl, trendEl, formatter, tolerance) {
-  if (!valueEl || !trendEl) {
+function renderEquityChart() {
+  if (!equityChartEl) {
     return;
   }
 
-  if (!Number.isFinite(value)) {
-    valueEl.textContent = "--";
-    valueEl.classList.remove("value-up", "value-down", "pulse-up", "pulse-down");
-    setTrend(trendEl, "flat");
+  const context = equityChartEl.getContext("2d");
+  if (!context) {
     return;
   }
 
-  valueEl.textContent = formatter(value);
+  const width = equityChartEl.width;
+  const height = equityChartEl.height;
+  const pad = 16;
+  const innerWidth = width - pad * 2;
+  const innerHeight = height - pad * 2;
 
-  const previous = lastDirectionalValues.get(key);
-  let direction = "flat";
-  if (Number.isFinite(previous)) {
-    if (value > previous + tolerance) {
-      direction = "up";
-    } else if (value < previous - tolerance) {
-      direction = "down";
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = "#f8fbff";
+  context.fillRect(0, 0, width, height);
+
+  context.strokeStyle = "#d8e5f2";
+  context.lineWidth = 1;
+  for (let i = 0; i < 4; i += 1) {
+    const y = pad + (innerHeight / 3) * i;
+    context.beginPath();
+    context.moveTo(pad, y);
+    context.lineTo(width - pad, y);
+    context.stroke();
+  }
+
+  if (equityPoints.length < 2) {
+    return;
+  }
+
+  const min = Math.min(...equityPoints);
+  const max = Math.max(...equityPoints);
+  const spread = Math.max(max - min, 0.0001);
+
+  context.beginPath();
+  for (let i = 0; i < equityPoints.length; i += 1) {
+    const x = pad + (i / (equityPoints.length - 1)) * innerWidth;
+    const normalized = (equityPoints[i] - min) / spread;
+    const y = height - pad - normalized * innerHeight;
+    if (i === 0) {
+      context.moveTo(x, y);
+    } else {
+      context.lineTo(x, y);
     }
   }
 
-  setTrend(trendEl, direction);
-  valueEl.classList.remove("value-up", "value-down", "pulse-up", "pulse-down");
-  if (direction === "up") {
-    valueEl.classList.add("value-up", "pulse-up");
-  }
-  if (direction === "down") {
-    valueEl.classList.add("value-down", "pulse-down");
-  }
-  if (direction !== "flat") {
-    window.setTimeout(() => {
-      valueEl.classList.remove("pulse-up", "pulse-down");
-    }, 430);
-  }
-
-  lastDirectionalValues.set(key, value);
+  context.lineWidth = 2;
+  context.strokeStyle = "#0b6ef9";
+  context.stroke();
 }
 
-function updatePriceFreshnessLabel() {
-  if (!pricesUpdatedEl) {
+function pushEquityPoint(value) {
+  if (!Number.isFinite(value)) {
     return;
   }
 
-  if (!lastPriceUpdateAtMs) {
-    pricesUpdatedEl.textContent = "Waiting for snapshot...";
-    pricesUpdatedEl.classList.add("stale");
+  equityPoints.push(value);
+  if (equityPoints.length > maxChartPoints) {
+    equityPoints.shift();
+  }
+  renderEquityChart();
+}
+
+function updateSettingsStatus(text, isError) {
+  if (!settingsStatusEl) {
+    return;
+  }
+  settingsStatusEl.textContent = text;
+  settingsStatusEl.classList.toggle("stale", Boolean(isError));
+}
+
+function updateSettingsForm(settings) {
+  if (!settings || typeof settings !== "object") {
     return;
   }
 
-  const ageMs = Date.now() - lastPriceUpdateAtMs;
-  if (ageMs > stalePriceThresholdMs) {
-    const staleSeconds = Math.floor(ageMs / 1000);
-    pricesUpdatedEl.textContent = `${lastPriceStatusLabel} | stale ${staleSeconds}s`;
-    pricesUpdatedEl.classList.add("stale");
+  if (settingsModeEl && typeof settings.execution_mode === "string") {
+    settingsModeEl.value = settings.execution_mode;
+  }
+  if (settingsPausedEl) {
+    settingsPausedEl.checked = Boolean(settings.trading_paused);
+  }
+  if (settingsLagEl && Number.isFinite(settings.lag_threshold_pct)) {
+    settingsLagEl.value = String(settings.lag_threshold_pct);
+  }
+  if (settingsRiskEl && Number.isFinite(settings.risk_per_trade_pct)) {
+    settingsRiskEl.value = String(settings.risk_per_trade_pct);
+  }
+  if (settingsDailyEl && Number.isFinite(settings.daily_loss_cap_pct)) {
+    settingsDailyEl.value = String(settings.daily_loss_cap_pct);
+  }
+  if (settingsMarketEl && typeof settings.market === "string") {
+    settingsMarketEl.textContent = `Market: ${settings.market}`;
+  }
+  if (settingsHorizonEl && Number.isFinite(settings.forecast_horizon_minutes)) {
+    settingsHorizonEl.textContent = `Forecast Horizon: ${Math.floor(settings.forecast_horizon_minutes)}m`;
+  }
+
+  updateSettingsStatus("Settings synced", false);
+}
+
+function collectSettingsPayload() {
+  return {
+    execution_mode: settingsModeEl ? settingsModeEl.value : "paper",
+    trading_paused: settingsPausedEl ? settingsPausedEl.checked : false,
+    lag_threshold_pct: settingsLagEl ? Number(settingsLagEl.value) : null,
+    risk_per_trade_pct: settingsRiskEl ? Number(settingsRiskEl.value) : null,
+    daily_loss_cap_pct: settingsDailyEl ? Number(settingsDailyEl.value) : null,
+  };
+}
+
+async function applySettings(event) {
+  event.preventDefault();
+
+  if (settingsPatchInFlight) {
     return;
   }
 
-  pricesUpdatedEl.textContent = lastPriceStatusLabel;
-  pricesUpdatedEl.classList.remove("stale");
+  settingsPatchInFlight = true;
+  updateSettingsStatus("Applying settings...", false);
+  try {
+    const response = await fetch("/settings", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(collectSettingsPayload()),
+    });
+
+    if (!response.ok) {
+      let detail = "Failed to apply settings";
+      try {
+        const errPayload = await response.json();
+        if (errPayload && typeof errPayload.error === "string") {
+          detail = errPayload.error;
+        }
+      } catch {
+      }
+      updateSettingsStatus(detail, true);
+      return;
+    }
+
+    const payload = await response.json();
+    updateSettingsForm(payload);
+    updateSettingsStatus("Settings applied", false);
+  } catch {
+    updateSettingsStatus("Network error while applying settings", true);
+  } finally {
+    settingsPatchInFlight = false;
+  }
+}
+
+function updateStrategyStats(stats) {
+  if (!stats || typeof stats !== "object") {
+    return;
+  }
+
+  const balance = asFiniteNumber(stats.balance);
+  const totalPnl = asFiniteNumber(stats.total_pnl);
+  const execLatencyUs = asFiniteNumber(stats.exec_latency_us);
+  const winRate = asFiniteNumber(stats.win_rate);
+  const btcUsd = asFiniteNumber(stats.btc_usd);
+
+  if (kpiBalanceEl) {
+    kpiBalanceEl.textContent = formatUsd(balance);
+  }
+  if (kpiTotalPnlEl) {
+    kpiTotalPnlEl.textContent = formatSignedUsd(totalPnl);
+    kpiTotalPnlEl.style.color = totalPnl >= 0 ? "#0f8f54" : "#be382f";
+  }
+  if (kpiExecLatencyEl) {
+    kpiExecLatencyEl.textContent = Number.isFinite(execLatencyUs)
+      ? `${Math.round(execLatencyUs)} us`
+      : "0 us";
+  }
+  if (kpiWinRateEl) {
+    kpiWinRateEl.textContent = Number.isFinite(winRate) ? `${winRate.toFixed(1)}%` : "0.0%";
+  }
+  if (kpiBtcUsdEl && Number.isFinite(btcUsd)) {
+    kpiBtcUsdEl.textContent = formatUsd(btcUsd);
+    latestBtcUsd = btcUsd;
+  }
+  if (equityLatestEl && Number.isFinite(balance)) {
+    equityLatestEl.textContent = `equity: ${balance.toFixed(2)}`;
+  }
+
+  pushEquityPoint(balance);
+}
+
+function updatePortfolioSummary(summary) {
+  if (!summary || typeof summary !== "object") {
+    return;
+  }
+
+  const equity = asFiniteNumber(summary.equity);
+  if (equityLatestEl && Number.isFinite(equity)) {
+    equityLatestEl.textContent = `equity: ${equity.toFixed(2)}`;
+  }
+  pushEquityPoint(equity);
+}
+
+function updateForecast(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return;
+  }
+
+  const current = asFiniteNumber(snapshot.current_btc_usd);
+  const target = asFiniteNumber(snapshot.forecast_btc_usd);
+  const deltaPct = asFiniteNumber(snapshot.delta_pct);
+  const ts = asFiniteNumber(snapshot.ts);
+
+  if (forecastCurrentEl) {
+    forecastCurrentEl.textContent = formatUsd(current);
+  }
+  if (forecastTargetEl) {
+    forecastTargetEl.textContent = formatUsd(target);
+  }
+  if (forecastDeltaEl) {
+    forecastDeltaEl.textContent = formatPct(deltaPct);
+    forecastDeltaEl.classList.remove("positive", "negative");
+    if (Number.isFinite(deltaPct) && deltaPct > 0.0) {
+      forecastDeltaEl.classList.add("positive");
+    }
+    if (Number.isFinite(deltaPct) && deltaPct < 0.0) {
+      forecastDeltaEl.classList.add("negative");
+    }
+  }
+  if (forecastUpdatedEl) {
+    forecastUpdatedEl.textContent = `updated ${formatTs(ts)}`;
+  }
 }
 
 function updatePriceSnapshot(snapshot) {
   const coinbase = asFiniteNumber(snapshot.coinbase_btc_usd);
   const binance = asFiniteNumber(snapshot.binance_btc_usdt);
   const kraken = asFiniteNumber(snapshot.kraken_btc_usd);
-  const polyBid = asFiniteNumber(snapshot.polymarket_yes_bid);
-  const polyAsk = asFiniteNumber(snapshot.polymarket_yes_ask);
-  const polyMid = asFiniteNumber(snapshot.polymarket_yes_mid);
 
-  setDirectionalValue(
-    "coinbase",
-    coinbase,
-    priceCoinbaseEl,
-    trendCoinbaseEl,
-    formatUsd,
-    0.01,
-  );
-  setDirectionalValue(
-    "binance",
-    binance,
-    priceBinanceEl,
-    trendBinanceEl,
-    formatUsd,
-    0.01,
-  );
-  setDirectionalValue("kraken", kraken, priceKrakenEl, trendKrakenEl, formatUsd, 0.01);
-  setDirectionalValue(
-    "poly-mid",
-    polyMid,
-    pricePolyMidEl,
-    trendPolyMidEl,
-    formatProbability,
-    0.0005,
-  );
-
-  if (pricePolyBidEl) {
-    pricePolyBidEl.textContent = formatProbability(polyBid);
-  }
-  if (pricePolyAskEl) {
-    pricePolyAskEl.textContent = formatProbability(polyAsk);
+  const samples = [coinbase, binance, kraken].filter((value) => Number.isFinite(value));
+  if (samples.length === 0) {
+    return;
   }
 
-  if (pricePolyMarketEl) {
-    const market =
-      typeof snapshot.polymarket_market_id === "string" && snapshot.polymarket_market_id
-        ? snapshot.polymarket_market_id
-        : "--";
-    pricePolyMarketEl.textContent = `market: ${market}`;
+  const mid = samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)];
+  latestBtcUsd = mid;
+  if (kpiBtcUsdEl) {
+    kpiBtcUsdEl.textContent = formatUsd(mid);
   }
-
-  const tick = Number.isFinite(snapshot.ts) ? Math.floor(snapshot.ts) : null;
-  const now = new Date();
-  if (tick === null) {
-    lastPriceStatusLabel = `updated ${now.toLocaleTimeString()}`;
-  } else {
-    lastPriceStatusLabel = `tick ${tick} | ${now.toLocaleTimeString()}`;
-  }
-
-  lastPriceUpdateAtMs = Date.now();
-  updatePriceFreshnessLabel();
 }
 
 function updateFeedHealth(data) {
@@ -273,126 +383,75 @@ function updateFeedHealth(data) {
   feedHealthEl.textContent = `mode: ${mode} | sources: ${totalSources}`;
 }
 
-function updatePaperFills(data) {
-  if (!paperFillsCountEl || !paperFillsLastEl) {
-    return;
+function logClassForEvent(eventName) {
+  if (eventName === "paper_fill") {
+    return "fill";
   }
-
-  paperFillCount += 1;
-  paperFillsCountEl.textContent = String(paperFillCount);
-
-  const side = data.side || "?";
-  const qty = Number.isFinite(data.qty) ? data.qty : "?";
-  const price = Number.isFinite(data.fill_px) ? data.fill_px.toFixed(3) : "?";
-  const market = typeof data.market_id === "string" ? data.market_id : "?";
-  paperFillsLastEl.textContent = `${side} ${qty} @ ${price} (${market})`;
+  if (eventName === "paper_intent") {
+    return "intent";
+  }
+  if (eventName === "risk_reject") {
+    return "reject";
+  }
+  if (eventName === "settings_update") {
+    return "settings";
+  }
+  if (eventName === "pause_state") {
+    return "pause";
+  }
+  return "default";
 }
 
-function pushEquityPoint(value) {
-  if (!Number.isFinite(value)) {
+function pushExecutionLog(entry) {
+  if (!logsEl || !entry || typeof entry !== "object") {
     return;
   }
 
-  equityPoints.push(value);
-  if (equityPoints.length > maxEquityPoints) {
-    equityPoints.shift();
-  }
-  renderEquityChart();
-}
-
-function renderEquityChart() {
-  if (!equityChartEl) {
+  const eventName = typeof entry.event === "string" ? entry.event : "event";
+  const headline = typeof entry.headline === "string" ? entry.headline : "Update";
+  const detail = typeof entry.detail === "string" ? entry.detail : "";
+  const ts = asFiniteNumber(entry.ts);
+  const key = `${eventName}|${headline}|${detail}|${ts}`;
+  if (seenLogKeys.has(key)) {
     return;
   }
+  seenLogKeys.add(key);
 
-  const context = equityChartEl.getContext("2d");
-  if (!context) {
-    return;
-  }
+  const item = document.createElement("article");
+  item.className = `chat-item ${logClassForEvent(eventName)}`;
 
-  const width = equityChartEl.width;
-  const height = equityChartEl.height;
-  const pad = 16;
-  const innerWidth = width - pad * 2;
-  const innerHeight = height - pad * 2;
+  const head = document.createElement("div");
+  head.className = "chat-head";
+  const eventSpan = document.createElement("span");
+  eventSpan.textContent = headline;
+  const tsSpan = document.createElement("span");
+  tsSpan.textContent = formatTs(ts);
+  head.append(eventSpan, tsSpan);
 
-  context.clearRect(0, 0, width, height);
+  const body = document.createElement("p");
+  body.className = "chat-body";
+  body.textContent = detail;
 
-  context.fillStyle = "#f7fbff";
-  context.fillRect(0, 0, width, height);
+  item.append(head, body);
+  logsEl.prepend(item);
 
-  context.strokeStyle = "#dce7f4";
-  context.lineWidth = 1;
-  for (let row = 0; row < 4; row += 1) {
-    const y = pad + (innerHeight / 3) * row;
-    context.beginPath();
-    context.moveTo(pad, y);
-    context.lineTo(width - pad, y);
-    context.stroke();
-  }
-
-  if (equityPoints.length < 2) {
-    return;
-  }
-
-  const min = Math.min(...equityPoints);
-  const max = Math.max(...equityPoints);
-  const spread = Math.max(max - min, 0.0001);
-
-  context.beginPath();
-  for (let i = 0; i < equityPoints.length; i += 1) {
-    const x = pad + (i / (equityPoints.length - 1)) * innerWidth;
-    const normalized = (equityPoints[i] - min) / spread;
-    const y = height - pad - normalized * innerHeight;
-    if (i === 0) {
-      context.moveTo(x, y);
-    } else {
-      context.lineTo(x, y);
+  while (logsEl.children.length > maxChatItems) {
+    const last = logsEl.lastElementChild;
+    if (!last) {
+      break;
     }
+    logsEl.removeChild(last);
   }
-
-  context.lineWidth = 2;
-  context.strokeStyle = "#0b6ef9";
-  context.stroke();
-
-  const last = equityPoints[equityPoints.length - 1];
-  const dotX = width - pad;
-  const dotY = height - pad - ((last - min) / spread) * innerHeight;
-  context.beginPath();
-  context.arc(dotX, dotY, 3.5, 0, Math.PI * 2);
-  context.fillStyle = "#0b6ef9";
-  context.fill();
-}
-
-function updatePortfolioSummary(summary) {
-  const pnl = Number(summary.pnl);
-  const equity = Number(summary.equity);
-  const positionQty = Number(summary.position_qty);
-  const fills = Number(summary.fills);
-
-  if (moneyMadeEl) {
-    moneyMadeEl.textContent = formatMoney(pnl);
-    moneyMadeEl.style.color = pnl >= 0 ? "#148f57" : "#c43227";
-  }
-  if (openPositionEl) {
-    openPositionEl.textContent = formatFixed(positionQty, 2);
-  }
-  if (totalFillsEl && Number.isFinite(fills)) {
-    totalFillsEl.textContent = String(Math.floor(fills));
-  }
-  if (paperFillsCountEl && Number.isFinite(fills)) {
-    paperFillCount = Math.max(paperFillCount, Math.floor(fills));
-    paperFillsCountEl.textContent = String(paperFillCount);
-  }
-  if (equityLatestEl) {
-    equityLatestEl.textContent = `equity: ${formatFixed(equity, 2)}`;
-  }
-
-  pushEquityPoint(equity);
 }
 
 function routeTelemetry(rawEvent) {
-  const parsed = maybeParseJson(rawEvent);
+  let parsed = null;
+  try {
+    parsed = JSON.parse(rawEvent);
+  } catch {
+    return;
+  }
+
   if (!parsed || typeof parsed !== "object") {
     return;
   }
@@ -402,19 +461,44 @@ function routeTelemetry(rawEvent) {
     updateFeedHealth(parsed);
     return;
   }
-
-  if (eventType === "paper_fill") {
-    updatePaperFills(parsed);
-    return;
-  }
-
   if (eventType === "portfolio_snapshot") {
     updatePortfolioSummary(parsed);
     return;
   }
-
   if (eventType === "price_snapshot") {
     updatePriceSnapshot(parsed);
+    return;
+  }
+  if (eventType === "strategy_stats") {
+    updateStrategyStats(parsed);
+    return;
+  }
+  if (eventType === "btc_forecast") {
+    updateForecast(parsed);
+    return;
+  }
+  if (eventType === "settings_updated") {
+    updateSettingsForm(parsed);
+    pushExecutionLog({
+      ts: Date.now(),
+      event: "settings_update",
+      headline: "Settings Updated",
+      detail: "Runtime controls changed",
+    });
+    return;
+  }
+  if (eventType === "execution_log") {
+    pushExecutionLog(parsed);
+    return;
+  }
+
+  if (eventType === "paper_intent" || eventType === "paper_fill" || eventType === "risk_reject") {
+    pushExecutionLog({
+      ts: Date.now(),
+      event: eventType,
+      headline: eventType.replace("_", " "),
+      detail: JSON.stringify(parsed),
+    });
   }
 }
 
@@ -430,10 +514,6 @@ function connect() {
   });
 
   ws.addEventListener("message", (event) => {
-    if (lastEventEl) {
-      lastEventEl.textContent = event.data;
-    }
-    pushEvent(event.data);
     routeTelemetry(event.data);
   });
 
@@ -447,11 +527,28 @@ function connect() {
   });
 }
 
-async function fetchFeedHealth() {
-  if (!feedHealthEl || feedHealthPollInFlight) {
+async function fetchSettings() {
+  if (settingsPollInFlight) {
     return;
   }
+  settingsPollInFlight = true;
+  try {
+    const response = await fetch("/settings");
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    updateSettingsForm(payload);
+  } catch {
+  } finally {
+    settingsPollInFlight = false;
+  }
+}
 
+async function fetchFeedHealth() {
+  if (feedHealthPollInFlight) {
+    return;
+  }
   feedHealthPollInFlight = true;
   try {
     const response = await fetch("/feed/health");
@@ -459,9 +556,7 @@ async function fetchFeedHealth() {
       return;
     }
     const payload = await response.json();
-    if (payload && typeof payload === "object") {
-      updateFeedHealth(payload);
-    }
+    updateFeedHealth(payload);
   } catch {
   } finally {
     feedHealthPollInFlight = false;
@@ -472,7 +567,6 @@ async function fetchPortfolioSummary() {
   if (portfolioPollInFlight) {
     return;
   }
-
   portfolioPollInFlight = true;
   try {
     const response = await fetch("/portfolio/summary");
@@ -480,9 +574,7 @@ async function fetchPortfolioSummary() {
       return;
     }
     const payload = await response.json();
-    if (payload && typeof payload === "object") {
-      updatePortfolioSummary(payload);
-    }
+    updatePortfolioSummary(payload);
   } catch {
   } finally {
     portfolioPollInFlight = false;
@@ -493,7 +585,6 @@ async function fetchPriceSnapshot() {
   if (priceSnapshotPollInFlight) {
     return;
   }
-
   priceSnapshotPollInFlight = true;
   try {
     const response = await fetch("/prices/snapshot");
@@ -501,23 +592,88 @@ async function fetchPriceSnapshot() {
       return;
     }
     const payload = await response.json();
-    if (payload && typeof payload === "object") {
-      updatePriceSnapshot(payload);
-    }
+    updatePriceSnapshot(payload);
   } catch {
   } finally {
     priceSnapshotPollInFlight = false;
   }
 }
 
+async function fetchStrategyStats() {
+  if (statsPollInFlight) {
+    return;
+  }
+  statsPollInFlight = true;
+  try {
+    const response = await fetch("/strategy/stats");
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    updateStrategyStats(payload);
+  } catch {
+  } finally {
+    statsPollInFlight = false;
+  }
+}
+
+async function fetchForecast() {
+  if (forecastPollInFlight) {
+    return;
+  }
+  forecastPollInFlight = true;
+  try {
+    const response = await fetch("/forecast/btc-15m");
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    updateForecast(payload);
+  } catch {
+  } finally {
+    forecastPollInFlight = false;
+  }
+}
+
+async function fetchExecutionLogs() {
+  if (logsPollInFlight) {
+    return;
+  }
+  logsPollInFlight = true;
+  try {
+    const response = await fetch("/logs/execution");
+    if (!response.ok) {
+      return;
+    }
+    const payload = await response.json();
+    const logs = Array.isArray(payload.logs) ? payload.logs : [];
+    for (const logEntry of logs) {
+      pushExecutionLog(logEntry);
+    }
+  } catch {
+  } finally {
+    logsPollInFlight = false;
+  }
+}
+
+if (settingsFormEl) {
+  settingsFormEl.addEventListener("submit", applySettings);
+}
+
+fetchSettings();
+fetchStrategyStats();
+fetchForecast();
 fetchFeedHealth();
 fetchPortfolioSummary();
 fetchPriceSnapshot();
-updatePriceFreshnessLabel();
+fetchExecutionLogs();
 
+window.setInterval(fetchSettings, fetchSettingsIntervalMs);
+window.setInterval(fetchStrategyStats, fetchStatsIntervalMs);
+window.setInterval(fetchForecast, fetchForecastIntervalMs);
 window.setInterval(fetchFeedHealth, fetchFeedHealthIntervalMs);
 window.setInterval(fetchPortfolioSummary, fetchPortfolioIntervalMs);
 window.setInterval(fetchPriceSnapshot, fetchPriceSnapshotIntervalMs);
-window.setInterval(updatePriceFreshnessLabel, priceFreshnessCheckIntervalMs);
+window.setInterval(fetchExecutionLogs, fetchLogsIntervalMs);
 
 connect();
