@@ -2,16 +2,19 @@ use axum::{
     extract::State,
     http::{header, StatusCode},
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Json,
     Router,
 };
 use serde::Serialize;
 
-use crate::state::AppState;
+use crate::{state::AppState, ws};
 
 pub fn router(state: AppState) -> Router {
-    Router::new().route("/runs", post(start_run)).with_state(state)
+    Router::new()
+        .route("/runs", post(start_run))
+        .route("/ws/events", get(ws::events_socket))
+        .with_state(state)
 }
 
 #[derive(Debug, Serialize)]

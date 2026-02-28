@@ -1,5 +1,6 @@
 pub mod routes;
 pub mod state;
+pub mod ws;
 
 use axum::Router;
 
@@ -17,7 +18,12 @@ mod tests {
         body::{to_bytes, Body},
         http::{header, Request, StatusCode},
     };
+    use futures_util::StreamExt;
     use serde::Deserialize;
+    use serde_json::Value;
+    use std::time::Duration;
+    use tokio::net::TcpListener;
+    use tokio_tungstenite::tungstenite::Message;
     use tower::ServiceExt;
 
     use crate::{app, routes, state::AppState};
@@ -97,5 +103,37 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn websocket_streams_events_channel() {
+        let state = AppState::new();
+        let app = routes::router(state);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let url = format!("ws://{addr}/ws/events");
+        let (mut socket, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+        let message = tokio::time::timeout(Duration::from_secs(2), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+
+        let payload = match message {
+            Message::Text(text) => text,
+            other => panic!("expected text websocket message, got {other:?}"),
+        };
+        let value: Value = serde_json::from_str(payload.as_ref()).unwrap();
+        assert_eq!(
+            value.get("event_type").and_then(Value::as_str),
+            Some("connected")
+        );
+
+        server.abort();
     }
 }
