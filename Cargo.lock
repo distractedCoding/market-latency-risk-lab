@@ -797,6 +797,7 @@ dependencies = [
  "criterion",
  "serde",
  "serde_json",
+ "strategy",
  "time",
  "tokio",
 ]
