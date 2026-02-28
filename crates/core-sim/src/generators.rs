@@ -7,6 +7,15 @@ pub struct PriceGenerator {
 
 impl PriceGenerator {
     pub fn new(seed: u64, start_price: f64, max_step: f64) -> Self {
+        assert!(
+            start_price.is_finite() && start_price >= 0.0,
+            "start_price must be finite and non-negative"
+        );
+        assert!(
+            max_step.is_finite() && max_step >= 0.0,
+            "max_step must be finite and non-negative"
+        );
+
         Self {
             state: seed,
             price: start_price,
@@ -43,11 +52,17 @@ impl MarketLagGenerator {
             return self.base_lag_ms;
         }
 
-        let span = self.jitter_ms.saturating_mul(2).saturating_add(1);
+        let min = self.base_lag_ms.saturating_sub(self.jitter_ms);
+        let max = self.base_lag_ms.saturating_add(self.jitter_ms);
+        let width = max - min;
+
+        if width == u64::MAX {
+            return next_u64(&mut self.state);
+        }
+
+        let span = width + 1;
         let offset = next_u64(&mut self.state) % span;
-        self.base_lag_ms
-            .saturating_sub(self.jitter_ms)
-            .saturating_add(offset)
+        min + offset
     }
 }
 
@@ -84,5 +99,45 @@ mod tests {
             .collect();
 
         assert_eq!(ticks_a, ticks_b);
+    }
+
+    #[test]
+    fn lag_stays_within_expected_bounds_when_base_is_less_than_jitter() {
+        let base = 10_u64;
+        let jitter = 50_u64;
+        let min = base.saturating_sub(jitter);
+        let max = base.saturating_add(jitter);
+        let mut lag = MarketLagGenerator::new(7, base, jitter);
+
+        for _ in 0..1_000 {
+            let sample = lag.next_lag_ms();
+            assert!((min..=max).contains(&sample));
+        }
+    }
+
+    #[test]
+    fn lag_near_u64_max_stays_within_bounds() {
+        let base = u64::MAX - 4;
+        let jitter = 10_u64;
+        let min = base.saturating_sub(jitter);
+        let max = base.saturating_add(jitter);
+        let mut lag = MarketLagGenerator::new(99, base, jitter);
+
+        for _ in 0..1_000 {
+            let sample = lag.next_lag_ms();
+            assert!((min..=max).contains(&sample));
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "start_price must be finite and non-negative")]
+    fn price_generator_rejects_invalid_start_price() {
+        let _ = PriceGenerator::new(1, f64::NAN, 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "max_step must be finite and non-negative")]
+    fn price_generator_rejects_invalid_max_step() {
+        let _ = PriceGenerator::new(1, 100.0, -1.0);
     }
 }
