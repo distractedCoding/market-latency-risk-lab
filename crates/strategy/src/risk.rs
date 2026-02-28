@@ -52,20 +52,27 @@ impl RiskState {
         &self,
         market_id: &str,
         current_market_exposure: f64,
-        intent_notional: f64,
+        intent_exposure_delta: f64,
     ) -> Result<(), StrategyError> {
         if market_id.trim().is_empty() {
             return Err(StrategyError::InvalidMarketId);
         }
-        if !current_market_exposure.is_finite() || !intent_notional.is_finite() {
+        if !current_market_exposure.is_finite() || !intent_exposure_delta.is_finite() {
             return Err(StrategyError::NonFiniteMarketExposure);
         }
-        if current_market_exposure < 0.0 || intent_notional < 0.0 {
+
+        let projected_market_exposure = current_market_exposure + intent_exposure_delta;
+        if !projected_market_exposure.is_finite() {
+            return Err(StrategyError::NonFiniteMarketExposure);
+        }
+
+        if current_market_exposure < 0.0 || projected_market_exposure < 0.0 {
             return Err(StrategyError::InvalidMarketExposure);
         }
 
-        let projected_market_exposure = current_market_exposure + intent_notional;
-        if projected_market_exposure > self.exposure_cap_amount() {
+        if projected_market_exposure > self.exposure_cap_amount()
+            && projected_market_exposure > current_market_exposure
+        {
             return Err(StrategyError::MarketExposureCapExceeded);
         }
 
@@ -88,7 +95,34 @@ mod tests {
 
         let decision = risk.check_market_exposure("btc-up", 10_000.0, 2_000.0);
 
-        assert!(decision.is_err());
+        assert_eq!(decision, Err(StrategyError::MarketExposureCapExceeded));
+    }
+
+    #[test]
+    fn allows_intent_when_projected_market_exposure_hits_cap_boundary() {
+        let risk = RiskState::new(100_000.0, 0.02).expect("valid risk state");
+
+        let decision = risk.check_market_exposure("btc-up", 1_500.0, 500.0);
+
+        assert_eq!(decision, Ok(()));
+    }
+
+    #[test]
+    fn allows_intent_that_reduces_net_market_exposure_even_when_still_above_cap() {
+        let risk = RiskState::new(100_000.0, 0.02).expect("valid risk state");
+
+        let decision = risk.check_market_exposure("btc-up", 2_500.0, -100.0);
+
+        assert_eq!(decision, Ok(()));
+    }
+
+    #[test]
+    fn rejects_non_finite_projected_market_exposure() {
+        let risk = RiskState::new(100_000.0, 0.02).expect("valid risk state");
+
+        let decision = risk.check_market_exposure("btc-up", f64::MAX, f64::MAX);
+
+        assert_eq!(decision, Err(StrategyError::NonFiniteMarketExposure));
     }
 
     #[test]
@@ -117,11 +151,15 @@ mod tests {
             Err(StrategyError::NonFiniteMarketExposure)
         );
         assert_eq!(
+            risk.check_market_exposure("btc-up", f64::MAX, f64::MAX),
+            Err(StrategyError::NonFiniteMarketExposure)
+        );
+        assert_eq!(
             risk.check_market_exposure("btc-up", -1.0, 500.0),
             Err(StrategyError::InvalidMarketExposure)
         );
         assert_eq!(
-            risk.check_market_exposure("btc-up", 1_000.0, -1.0),
+            risk.check_market_exposure("btc-up", 1.0, -2.0),
             Err(StrategyError::InvalidMarketExposure)
         );
     }
