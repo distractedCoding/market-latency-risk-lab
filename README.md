@@ -1,6 +1,6 @@
 # Market Latency Risk Lab
 
-Educational, closed-environment simulation to demonstrate how latency gaps can create exploitable pricing inefficiencies — and why this is a market integrity risk.
+Educational, closed-environment simulation for studying latency-driven market risk mechanics.
 
 ## Scope
 This project is **simulation-only**:
@@ -8,34 +8,32 @@ This project is **simulation-only**:
 - no order routing to real venues
 - no real-money execution
 
-## What it models
-- external signal feed ("prediction")
-- slower market feed with configurable delay
-- divergence trigger (default `>0.3%`)
-- sub-100ms decision loop
-- micro-trade style paper execution
-- risk caps (max position %, daily loss cap, kill switch)
+The Rust monolith replaces the legacy Python simulator. All workflows run through Cargo.
 
-## Quickstart
+## Quickstart (Rust)
+From the repository root:
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-python -m sim.main --steps 3000 --threshold 0.003 --output artifacts/run.csv
+PATH="$HOME/.cargo/bin:$PATH" cargo test --workspace -q
+PATH="$HOME/.cargo/bin:$PATH" cargo run -p lab-server
 ```
 
-## Outputs
-- `artifacts/run.csv` trade/event log
-- summary in terminal (PnL, max drawdown, trigger count)
+The server listens on `0.0.0.0:8080` by default.
 
-## Class demo ideas
-- vary latency (`--market-lag-ms`) and compare PnL / risk
-- vary threshold (`--threshold`) to show false positives
-- enable stress mode for sudden volatility bursts
+## Server Configuration
+Use environment variables to override defaults:
+- `LAB_SERVER_ADDR` (default `0.0.0.0:8080`)
+- `LAB_SERVER_REPLAY_OUTPUT` (default `artifacts/replay.csv`)
 
-See `docs/methodology.md` for assumptions and limitations.
+Example:
 
-## Runtime benchmarks
+```bash
+LAB_SERVER_ADDR="127.0.0.1:8080" \
+LAB_SERVER_REPLAY_OUTPUT="artifacts/replay.csv" \
+PATH="$HOME/.cargo/bin:$PATH" cargo run -p lab-server
+```
+
+## Runtime Benchmarks
 Run runtime tests and benchmarks from the repository root:
 
 ```bash
@@ -43,4 +41,4 @@ PATH="$HOME/.cargo/bin:$PATH" cargo test -p runtime -q
 PATH="$HOME/.cargo/bin:$PATH" cargo bench -p runtime --no-fail-fast
 ```
 
-Benchmark outputs include throughput timing for batched `step_once` execution, a `throughput_target_met` flag against `TARGET_ORDERS_PER_SEC`, and latency percentiles (`p50`, `p95`, `p99`) reported in nanoseconds with the runtime budget derived from `TARGET_ORDERS_PER_SEC`.
+See `docs/methodology.md` for assumptions and limitations and `docs/migration/python-to-rust.md` for migration details.
