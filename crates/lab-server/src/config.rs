@@ -21,6 +21,13 @@ impl RunMode {
             _ => None,
         }
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PaperLive => "paper-live",
+            Self::Sim => "sim",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -168,10 +175,30 @@ mod tests {
         }
     }
 
+    fn reset_config_env_baseline() -> [EnvVarGuard; 3] {
+        [
+            EnvVarGuard::unset(ENV_ADDR_KEY),
+            EnvVarGuard::unset(ENV_MODE_KEY),
+            EnvVarGuard::unset(ENV_REPLAY_KEY),
+        ]
+    }
+
     #[test]
     fn defaults_listen_address_when_env_is_unset() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = EnvVarGuard::unset(ENV_ADDR_KEY);
+        let _baseline = reset_config_env_baseline();
+
+        let config = Config::from_env().unwrap();
+
+        assert_eq!(config.listen_addr, "0.0.0.0:8080".parse().unwrap());
+    }
+
+    #[test]
+    fn defaults_listen_address_ignores_unrelated_mode_and_replay_env_vars() {
+        let _lock = ENV_LOCK.lock().unwrap();
+        let _ambient_mode_guard = EnvVarGuard::set(ENV_MODE_KEY, "invalid");
+        let _ambient_replay_guard = EnvVarGuard::set(ENV_REPLAY_KEY, "  ");
+        let _baseline = reset_config_env_baseline();
 
         let config = Config::from_env().unwrap();
 
@@ -181,6 +208,7 @@ mod tests {
     #[test]
     fn uses_listen_address_override_from_env() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set(ENV_ADDR_KEY, "127.0.0.1:9090");
 
         let config = Config::from_env().unwrap();
@@ -191,6 +219,7 @@ mod tests {
     #[test]
     fn returns_error_for_invalid_listen_address_override() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set(ENV_ADDR_KEY, "not-an-addr");
 
         let err = Config::from_env().unwrap_err();
@@ -201,7 +230,7 @@ mod tests {
     #[test]
     fn defaults_to_paper_live_mode() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = EnvVarGuard::unset(ENV_MODE_KEY);
+        let _baseline = reset_config_env_baseline();
 
         let cfg = Config::from_env().unwrap();
 
@@ -211,6 +240,7 @@ mod tests {
     #[test]
     fn uses_mode_override_from_env() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set(ENV_MODE_KEY, "sim");
 
         let cfg = Config::from_env().unwrap();
@@ -221,6 +251,7 @@ mod tests {
     #[test]
     fn returns_error_for_invalid_mode_override() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set(ENV_MODE_KEY, "invalid");
 
         let err = Config::from_env().unwrap_err();
@@ -234,6 +265,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set_os(
             ENV_MODE_KEY,
             std::ffi::OsString::from_vec(vec![0x66, 0x6f, 0x80]),
@@ -250,6 +282,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set_os(
             ENV_ADDR_KEY,
             std::ffi::OsString::from_vec(vec![0x66, 0x6f, 0x80]),
@@ -263,7 +296,7 @@ mod tests {
     #[test]
     fn defaults_replay_output_path_when_env_is_unset() {
         let _lock = ENV_LOCK.lock().unwrap();
-        let _guard = EnvVarGuard::unset(ENV_REPLAY_KEY);
+        let _baseline = reset_config_env_baseline();
 
         let config = Config::from_env().unwrap();
 
@@ -273,6 +306,7 @@ mod tests {
     #[test]
     fn uses_replay_output_path_override_from_env() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set(ENV_REPLAY_KEY, "artifacts/custom.csv");
 
         let config = Config::from_env().unwrap();
@@ -286,6 +320,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set_os(
             ENV_REPLAY_KEY,
             std::ffi::OsString::from_vec(vec![0x66, 0x6f, 0x80]),
@@ -299,6 +334,7 @@ mod tests {
     #[test]
     fn returns_error_for_empty_replay_output_override() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set(ENV_REPLAY_KEY, "");
 
         let err = Config::from_env().unwrap_err();
@@ -309,6 +345,7 @@ mod tests {
     #[test]
     fn returns_error_for_whitespace_replay_output_override() {
         let _lock = ENV_LOCK.lock().unwrap();
+        let _baseline = reset_config_env_baseline();
         let _guard = EnvVarGuard::set(ENV_REPLAY_KEY, "   ");
 
         let err = Config::from_env().unwrap_err();

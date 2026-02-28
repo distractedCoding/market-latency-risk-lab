@@ -12,15 +12,20 @@ use tokio::net::TcpListener;
 async fn main() -> Result<(), Box<dyn Error>> {
     let config::Config {
         listen_addr,
-        mode: _mode,
+        mode,
         replay_output_path,
     } = config::Config::from_env()?;
 
+    println!("{}", startup_mode_banner(mode));
     initialize_replay_output(&replay_output_path)?;
     let listener = TcpListener::bind(listen_addr).await?;
 
     axum::serve(listener, wiring::build_app()).await?;
     Ok(())
+}
+
+fn startup_mode_banner(mode: config::RunMode) -> String {
+    format!("lab-server startup mode: {}", mode.as_str())
 }
 
 fn initialize_replay_output(path: &str) -> Result<(), std::io::Error> {
@@ -44,9 +49,10 @@ mod tests {
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use crate::config::RunMode;
     use runtime::replay::REPLAY_CSV_HEADER;
 
-    use super::initialize_replay_output;
+    use super::{initialize_replay_output, startup_mode_banner};
 
     #[test]
     fn initialize_replay_output_creates_parent_dir_and_writes_csv_header() {
@@ -64,5 +70,17 @@ mod tests {
         assert_eq!(actual, REPLAY_CSV_HEADER);
 
         fs::remove_dir_all(&root).expect("temp replay directory should be removable");
+    }
+
+    #[test]
+    fn startup_mode_banner_reports_selected_mode() {
+        assert_eq!(
+            startup_mode_banner(RunMode::PaperLive),
+            "lab-server startup mode: paper-live"
+        );
+        assert_eq!(
+            startup_mode_banner(RunMode::Sim),
+            "lab-server startup mode: sim"
+        );
     }
 }
