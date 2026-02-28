@@ -1,7 +1,9 @@
 mod config;
+mod generators;
 mod state;
 
 pub use config::SimConfig;
+pub use generators::{MarketLagGenerator, PriceGenerator};
 pub use state::SimState;
 
 pub fn workspace_bootstrap() -> bool {
