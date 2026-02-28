@@ -1,4 +1,4 @@
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use runtime::{engine::SimEngine, metrics::DecisionLatencyMetrics, TARGET_ORDERS_PER_SEC};
 use std::time::Instant;
 use tokio::runtime::Builder;
@@ -16,17 +16,19 @@ fn bench_runtime_latency(c: &mut Criterion) {
         let mut engine = SimEngine::for_test_seed(11);
         for _ in 0..LATENCY_SAMPLES {
             let started = Instant::now();
-            let _ = engine.step_once().await;
-            let micros = started.elapsed().as_micros() as u64;
-            metrics.record_latency_micros(micros.max(1));
+            let events = engine.step_once().await;
+            let elapsed_nanos = started.elapsed().as_nanos() as u64;
+            metrics.record_latency_nanos(elapsed_nanos);
+            black_box(events);
         }
+        black_box(&engine);
     });
 
     if let Some(report) = metrics.percentiles() {
-        let budget_micros = 1_000_000 / TARGET_ORDERS_PER_SEC;
+        let budget_nanos = 1_000_000_000 / TARGET_ORDERS_PER_SEC;
         println!(
-            "latency_budget_micros={budget_micros} p50={} p95={} p99={} max={} samples={}",
-            report.p50_micros, report.p95_micros, report.p99_micros, report.max_micros, report.count
+            "latency_budget_nanos={budget_nanos} p50_nanos={} p95_nanos={} p99_nanos={} max_nanos={} samples={}",
+            report.p50_nanos, report.p95_nanos, report.p99_nanos, report.max_nanos, report.count
         );
     }
 
@@ -34,8 +36,10 @@ fn bench_runtime_latency(c: &mut Criterion) {
         let mut engine = SimEngine::for_test_seed(13);
         b.iter(|| {
             runtime.block_on(async {
-                let _ = engine.step_once().await;
+                let events = engine.step_once().await;
+                black_box(events);
             });
+            black_box(&engine);
         });
     });
 }

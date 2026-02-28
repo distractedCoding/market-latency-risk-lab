@@ -1,16 +1,16 @@
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LatencyPercentiles {
     pub count: usize,
-    pub p50_micros: u64,
-    pub p90_micros: u64,
-    pub p95_micros: u64,
-    pub p99_micros: u64,
-    pub max_micros: u64,
+    pub p50_nanos: u64,
+    pub p90_nanos: u64,
+    pub p95_nanos: u64,
+    pub p99_nanos: u64,
+    pub max_nanos: u64,
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct DecisionLatencyMetrics {
-    latencies_micros: Vec<u64>,
+    latencies_nanos: Vec<u64>,
 }
 
 impl DecisionLatencyMetrics {
@@ -18,35 +18,35 @@ impl DecisionLatencyMetrics {
         Self::default()
     }
 
-    pub fn record_latency_micros(&mut self, latency_micros: u64) {
-        self.latencies_micros.push(latency_micros);
+    pub fn record_latency_nanos(&mut self, latency_nanos: u64) {
+        self.latencies_nanos.push(latency_nanos);
     }
 
     pub fn percentiles(&self) -> Option<LatencyPercentiles> {
-        if self.latencies_micros.is_empty() {
+        if self.latencies_nanos.is_empty() {
             return None;
         }
 
-        let mut sorted = self.latencies_micros.clone();
+        let mut sorted = self.latencies_nanos.clone();
         sorted.sort_unstable();
         let count = sorted.len();
 
         Some(LatencyPercentiles {
             count,
-            p50_micros: percentile_nearest_rank(&sorted, 50)?,
-            p90_micros: percentile_nearest_rank(&sorted, 90)?,
-            p95_micros: percentile_nearest_rank(&sorted, 95)?,
-            p99_micros: percentile_nearest_rank(&sorted, 99)?,
-            max_micros: sorted[count - 1],
+            p50_nanos: percentile_nearest_rank(&sorted, 50)?,
+            p90_nanos: percentile_nearest_rank(&sorted, 90)?,
+            p95_nanos: percentile_nearest_rank(&sorted, 95)?,
+            p99_nanos: percentile_nearest_rank(&sorted, 99)?,
+            max_nanos: sorted[count - 1],
         })
     }
 
-    pub fn percentile_micros(&self, percentile: usize) -> Option<u64> {
-        if self.latencies_micros.is_empty() {
+    pub fn percentile_nanos(&self, percentile: usize) -> Option<u64> {
+        if self.latencies_nanos.is_empty() {
             return None;
         }
 
-        let mut sorted = self.latencies_micros.clone();
+        let mut sorted = self.latencies_nanos.clone();
         sorted.sort_unstable();
         percentile_nearest_rank(&sorted, percentile)
     }
@@ -76,34 +76,34 @@ mod tests {
     #[test]
     fn single_sample_reports_same_value_for_all_percentiles() {
         let mut metrics = DecisionLatencyMetrics::new();
-        metrics.record_latency_micros(42);
+        metrics.record_latency_nanos(42);
 
         let report = metrics.percentiles().expect("percentiles should exist");
 
-        assert_eq!(report.p50_micros, 42);
-        assert_eq!(report.p90_micros, 42);
-        assert_eq!(report.p95_micros, 42);
-        assert_eq!(report.p99_micros, 42);
-        assert_eq!(report.max_micros, 42);
+        assert_eq!(report.p50_nanos, 42);
+        assert_eq!(report.p90_nanos, 42);
+        assert_eq!(report.p95_nanos, 42);
+        assert_eq!(report.p99_nanos, 42);
+        assert_eq!(report.max_nanos, 42);
     }
 
     #[test]
     fn supports_boundary_percentile_queries() {
         let mut metrics = DecisionLatencyMetrics::new();
-        metrics.record_latency_micros(10);
-        metrics.record_latency_micros(20);
-        metrics.record_latency_micros(30);
+        metrics.record_latency_nanos(10);
+        metrics.record_latency_nanos(20);
+        metrics.record_latency_nanos(30);
 
-        assert_eq!(metrics.percentile_micros(1), Some(10));
-        assert_eq!(metrics.percentile_micros(100), Some(30));
+        assert_eq!(metrics.percentile_nanos(1), Some(10));
+        assert_eq!(metrics.percentile_nanos(100), Some(30));
     }
 
     #[test]
     fn invalid_percentile_queries_return_none() {
         let mut metrics = DecisionLatencyMetrics::new();
-        metrics.record_latency_micros(10);
+        metrics.record_latency_nanos(10);
 
-        assert_eq!(metrics.percentile_micros(0), None);
-        assert_eq!(metrics.percentile_micros(101), None);
+        assert_eq!(metrics.percentile_nanos(0), None);
+        assert_eq!(metrics.percentile_nanos(101), None);
     }
 }

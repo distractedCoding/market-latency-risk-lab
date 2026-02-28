@@ -43,4 +43,4 @@ PATH="$HOME/.cargo/bin:$PATH" cargo test -p runtime -q
 PATH="$HOME/.cargo/bin:$PATH" cargo bench -p runtime --no-fail-fast
 ```
 
-Benchmark outputs include throughput timing for batched `step_once` execution and latency percentiles (`p50`, `p95`, `p99`) with the runtime budget derived from `TARGET_ORDERS_PER_SEC`.
+Benchmark outputs include throughput timing for batched `step_once` execution, a `throughput_target_met` flag against `TARGET_ORDERS_PER_SEC`, and latency percentiles (`p50`, `p95`, `p99`) reported in nanoseconds with the runtime budget derived from `TARGET_ORDERS_PER_SEC`.

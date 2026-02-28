@@ -1,6 +1,7 @@
 pub mod engine;
 pub mod events;
 pub mod logging;
+pub mod benchmark;
 pub mod metrics;
 pub mod replay;
 pub mod supervisor;
@@ -44,18 +45,18 @@ mod tests {
     fn latency_percentiles_are_reported() {
         let mut metrics = DecisionLatencyMetrics::new();
 
-        metrics.record_latency_micros(1);
-        metrics.record_latency_micros(2);
-        metrics.record_latency_micros(3);
-        metrics.record_latency_micros(4);
-        metrics.record_latency_micros(100);
+        metrics.record_latency_nanos(1);
+        metrics.record_latency_nanos(2);
+        metrics.record_latency_nanos(3);
+        metrics.record_latency_nanos(4);
+        metrics.record_latency_nanos(100);
 
         let report = metrics.percentiles().expect("percentiles should exist");
 
         assert_eq!(report.count, 5);
-        assert_eq!(report.p50_micros, 3);
-        assert_eq!(report.p95_micros, 100);
-        assert_eq!(report.p99_micros, 100);
+        assert_eq!(report.p50_nanos, 3);
+        assert_eq!(report.p95_nanos, 100);
+        assert_eq!(report.p99_nanos, 100);
     }
 
     #[test]
