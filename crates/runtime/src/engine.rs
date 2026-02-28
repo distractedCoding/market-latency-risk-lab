@@ -52,7 +52,9 @@ mod tests {
     #[tokio::test]
     async fn live_runner_emits_no_events_when_signal_is_hold() {
         let mut engine = SimEngine::for_test_seed(7);
-        let out = engine.step_live_once(joined_inputs_for_hold_signal(1)).await;
+        let out = engine
+            .step_live_once(joined_inputs_for_hold_signal(1))
+            .await;
 
         assert!(out.is_empty());
     }

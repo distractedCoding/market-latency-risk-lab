@@ -1,7 +1,7 @@
 use crate::live::btc_feed::NormalizedBtcTick;
 use serde::Deserialize;
-use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParseBtcTradeError {
@@ -14,7 +14,8 @@ pub enum ParseBtcTradeError {
 }
 
 pub fn parse_coinbase_trade(raw: &str) -> Result<NormalizedBtcTick, ParseBtcTradeError> {
-    let trade: CoinbaseTrade = serde_json::from_str(raw).map_err(|_| ParseBtcTradeError::InvalidJson)?;
+    let trade: CoinbaseTrade =
+        serde_json::from_str(raw).map_err(|_| ParseBtcTradeError::InvalidJson)?;
 
     if trade.kind != "match" {
         return Err(ParseBtcTradeError::UnsupportedMessageType);
@@ -62,11 +63,12 @@ struct CoinbaseTrade {
 
 #[cfg(test)]
 mod tests {
-    use super::{ParseBtcTradeError, parse_coinbase_trade};
+    use super::{parse_coinbase_trade, ParseBtcTradeError};
 
     #[test]
     fn parses_coinbase_trade_into_normalized_tick() {
-        let raw = r#"{"type":"match","price":"64001.2","size":"0.01","time":"2026-02-28T12:00:00Z"}"#;
+        let raw =
+            r#"{"type":"match","price":"64001.2","size":"0.01","time":"2026-02-28T12:00:00Z"}"#;
         let tick = parse_coinbase_trade(raw).unwrap();
         assert_eq!(tick.venue, "coinbase");
         assert!(tick.px > 0.0);
@@ -75,7 +77,8 @@ mod tests {
 
     #[test]
     fn rejects_coinbase_message_types_other_than_match() {
-        let raw = r#"{"type":"ticker","price":"64001.2","size":"0.01","time":"2026-02-28T12:00:00Z"}"#;
+        let raw =
+            r#"{"type":"ticker","price":"64001.2","size":"0.01","time":"2026-02-28T12:00:00Z"}"#;
         let error = parse_coinbase_trade(raw).unwrap_err();
 
         assert_eq!(error, ParseBtcTradeError::UnsupportedMessageType);

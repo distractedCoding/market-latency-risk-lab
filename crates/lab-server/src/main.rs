@@ -1,8 +1,8 @@
 mod config;
 mod wiring;
 
-use std::error::Error;
 use std::env;
+use std::error::Error;
 use std::fs::{self, File};
 use std::path::Path;
 
@@ -86,8 +86,8 @@ mod tests {
     use std::sync::Mutex;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use runtime::logging::PaperJournalRowKind;
     use crate::config::RunMode;
+    use runtime::logging::PaperJournalRowKind;
     use runtime::replay::REPLAY_CSV_HEADER;
 
     use super::{initial_paper_journal_rows, initialize_replay_output, startup_mode_banner};
@@ -201,9 +201,7 @@ mod tests {
         let actual = fs::read_to_string(&replay_path).expect("replay output file should exist");
         assert_eq!(
             actual,
-            format!(
-                "{REPLAY_CSV_HEADER}17,,,,paper_fill:buy:market-1@0.62x5,,,,\n"
-            )
+            format!("{REPLAY_CSV_HEADER}17,,,,paper_fill:buy:market-1@0.62x5,,,,\n")
         );
 
         fs::remove_dir_all(&root).expect("temp replay directory should be removable");

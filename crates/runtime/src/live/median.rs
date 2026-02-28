@@ -25,10 +25,7 @@ impl MedianAggregator {
     ///
     /// Returns an error when `staleness_ms == 0`, or when `outlier_bps` is not
     /// finite or negative.
-    pub fn new(
-        staleness_ms: u64,
-        outlier_bps: f64,
-    ) -> Result<Self, MedianAggregatorConfigError> {
+    pub fn new(staleness_ms: u64, outlier_bps: f64) -> Result<Self, MedianAggregatorConfigError> {
         if staleness_ms == 0 {
             return Err(MedianAggregatorConfigError::InvalidStalenessMs);
         }
@@ -99,7 +96,10 @@ impl MedianAggregator {
         }
 
         let px_median = median_price(&filtered_ticks)?;
-        let min_px = filtered_ticks.iter().map(|tick| tick.px).fold(f64::INFINITY, f64::min);
+        let min_px = filtered_ticks
+            .iter()
+            .map(|tick| tick.px)
+            .fold(f64::INFINITY, f64::min);
         let max_px = filtered_ticks
             .iter()
             .map(|tick| tick.px)

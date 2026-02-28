@@ -84,7 +84,12 @@ impl RuntimeEvent {
         Self::RunStarted { run_id }
     }
 
-    pub fn paper_intent(market_id: impl Into<String>, side: PaperOrderSide, qty: f64, limit_px: f64) -> Self {
+    pub fn paper_intent(
+        market_id: impl Into<String>,
+        side: PaperOrderSide,
+        qty: f64,
+        limit_px: f64,
+    ) -> Self {
         Self::PaperIntent {
             market_id: market_id.into(),
             side,
@@ -93,7 +98,12 @@ impl RuntimeEvent {
         }
     }
 
-    pub fn paper_fill(market_id: impl Into<String>, side: PaperOrderSide, qty: f64, fill_px: f64) -> Self {
+    pub fn paper_fill(
+        market_id: impl Into<String>,
+        side: PaperOrderSide,
+        qty: f64,
+        fill_px: f64,
+    ) -> Self {
         Self::PaperFill {
             market_id: market_id.into(),
             side,
@@ -102,7 +112,11 @@ impl RuntimeEvent {
         }
     }
 
-    pub fn risk_reject(market_id: impl Into<String>, reason: impl Into<String>, requested_qty: f64) -> Self {
+    pub fn risk_reject(
+        market_id: impl Into<String>,
+        reason: impl Into<String>,
+        requested_qty: f64,
+    ) -> Self {
         Self::RiskReject {
             market_id: market_id.into(),
             reason: reason.into(),
@@ -230,7 +244,10 @@ impl AppState {
     }
 
     #[cfg(test)]
-    pub(crate) fn set_discovered_markets_for_test(&self, discovered_markets: Vec<DiscoveredMarket>) {
+    pub(crate) fn set_discovered_markets_for_test(
+        &self,
+        discovered_markets: Vec<DiscoveredMarket>,
+    ) {
         *self
             .discovered_markets
             .write()

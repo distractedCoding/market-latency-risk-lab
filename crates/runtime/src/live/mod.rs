@@ -6,9 +6,9 @@ pub mod polymarket_quote;
 pub mod types;
 
 pub use btc_feed::NormalizedBtcTick;
-pub use btc_parse::{ParseBtcTradeError, parse_coinbase_trade};
+pub use btc_parse::{parse_coinbase_trade, ParseBtcTradeError};
 pub use median::MedianAggregator;
-pub use polymarket_discovery::{PolymarketMarket, filter_markets};
+pub use polymarket_discovery::{filter_markets, PolymarketMarket};
 pub use polymarket_quote::{
     NormalizePolymarketQuoteError, PolymarketQuoteTick, RawPolymarketQuote,
 };

@@ -19,8 +19,13 @@ const RISK_DAILY_LOSS_CAP_PCT: f64 = 0.06;
 const SELL_BASE_MARKET_EXPOSURE: f64 = 1.0;
 
 pub fn run_paper_live_once(tick: u64, joined: &JoinedLiveInputs) -> Vec<RuntimeEvent> {
-    let prediction_price = derive_prediction_price(joined.quote_tick.mid_yes, joined.btc_tick.px_spread);
-    let live_signal = match live_signal(prediction_price, joined.quote_tick.mid_yes, SIGNAL_THRESHOLD) {
+    let prediction_price =
+        derive_prediction_price(joined.quote_tick.mid_yes, joined.btc_tick.px_spread);
+    let live_signal = match live_signal(
+        prediction_price,
+        joined.quote_tick.mid_yes,
+        SIGNAL_THRESHOLD,
+    ) {
         Ok(signal) => signal,
         Err(_) => return vec![],
     };
@@ -30,7 +35,8 @@ pub fn run_paper_live_once(tick: u64, joined: &JoinedLiveInputs) -> Vec<RuntimeE
     }
 
     let mut events = vec![RuntimeEvent::new(tick, RuntimeStage::PaperIntentCreated)];
-    let signed_exposure_delta = signed_exposure_delta(live_signal.action, ORDER_QTY, joined.quote_tick.mid_yes);
+    let signed_exposure_delta =
+        signed_exposure_delta(live_signal.action, ORDER_QTY, joined.quote_tick.mid_yes);
     let current_market_exposure = current_market_exposure(live_signal.action);
 
     let risk_state = match RiskState::new(RISK_STARTING_EQUITY, RISK_DAILY_LOSS_CAP_PCT) {
@@ -96,7 +102,7 @@ fn current_market_exposure(action: Signal) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{JoinedLiveInputs, run_paper_live_once};
+    use super::{run_paper_live_once, JoinedLiveInputs};
     use crate::events::RuntimeStage;
     use crate::live::{BtcMedianTick, PolymarketQuoteTick};
 

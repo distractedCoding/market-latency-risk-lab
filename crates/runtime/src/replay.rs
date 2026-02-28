@@ -180,9 +180,7 @@ mod tests {
         let csv = write_csv_for_test(vec![sample_paper_fill_row()]).unwrap();
         assert_eq!(
             csv,
-            format!(
-                "{REPLAY_CSV_HEADER}17,,,,paper_fill:buy:market-1@0.62x5,,,,\n"
-            )
+            format!("{REPLAY_CSV_HEADER}17,,,,paper_fill:buy:market-1@0.62x5,,,,\n")
         );
     }
 
@@ -195,9 +193,7 @@ mod tests {
 
         assert_eq!(
             csv,
-            format!(
-                "{REPLAY_CSV_HEADER}17,,,,\"paper_fill:buy,\"\"market-1\"\"\nleg2\",,,,\n"
-            )
+            format!("{REPLAY_CSV_HEADER}17,,,,\"paper_fill:buy,\"\"market-1\"\"\nleg2\",,,,\n")
         );
     }
 }

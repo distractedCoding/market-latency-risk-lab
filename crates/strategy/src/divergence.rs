@@ -99,8 +99,14 @@ mod tests {
 
     #[test]
     fn normalized_divergence_threshold_uses_ratio_units() {
-        assert_eq!(signal_from_normalized_divergence(0.004, 0.003), Ok(Signal::Buy));
-        assert_eq!(signal_from_normalized_divergence(-0.004, 0.003), Ok(Signal::Sell));
+        assert_eq!(
+            signal_from_normalized_divergence(0.004, 0.003),
+            Ok(Signal::Buy)
+        );
+        assert_eq!(
+            signal_from_normalized_divergence(-0.004, 0.003),
+            Ok(Signal::Sell)
+        );
     }
 
     #[test]
