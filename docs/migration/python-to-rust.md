@@ -7,7 +7,7 @@ Python simulator entrypoints have been retired. The Rust workspace is now the on
 - Removed legacy Python simulator files under `sim/`.
 - Removed legacy Python logic tests under `tests/`.
 - Updated top-level docs to use Cargo-based workflows.
-- Retired `requirements.txt` as an active dependency manifest.
+- Removed legacy root `requirements.txt`; Cargo manifests are now authoritative.
 
 ## Supported Workflow
 Run from repository root:

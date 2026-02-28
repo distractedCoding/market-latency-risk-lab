@@ -1,2 +1,0 @@
-# Legacy Python requirements retired.
-# Use Cargo workspace commands for all simulator and server workflows.
