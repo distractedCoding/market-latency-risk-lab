@@ -83,14 +83,34 @@ impl OrderBook {
 
 #[cfg(test)]
 mod tests {
+    use crate::fills::Fill;
+
     use super::OrderBook;
 
     #[test]
     fn crossing_order_fills_at_best_level() {
         let mut book = OrderBook::default_with_liquidity();
-        let fill = book.execute_market_buy(1.5);
+        let fill = book.execute_market_buy(4.0);
 
-        assert!(fill.filled_qty > 0.0);
-        assert!(fill.avg_price >= 100.0 && fill.avg_price <= 101.0);
+        assert_eq!(
+            fill.fills,
+            vec![
+                Fill {
+                    price: 100.0,
+                    qty: 1.0,
+                },
+                Fill {
+                    price: 101.0,
+                    qty: 2.0,
+                },
+                Fill {
+                    price: 102.0,
+                    qty: 1.0,
+                },
+            ]
+        );
+        assert_eq!(fill.filled_qty, 4.0);
+        assert_eq!(fill.remaining_qty, 0.0);
+        assert_eq!(fill.avg_price, 101.0);
     }
 }
