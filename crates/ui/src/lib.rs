@@ -26,4 +26,11 @@ mod tests {
         assert!(html.contains("/static/styles.css"));
         assert!(html.contains("/static/app.js"));
     }
+
+    #[test]
+    fn ui_shell_contains_paper_live_panels() {
+        let html = index_html();
+        assert!(html.contains("Feed Health"));
+        assert!(html.contains("Paper Fills"));
+    }
 }
