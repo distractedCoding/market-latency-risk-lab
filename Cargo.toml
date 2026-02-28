@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "crates/core-sim",
+    "crates/strategy",
+    "crates/runtime",
+    "crates/api",
+    "crates/ui",
+    "crates/lab-server",
+]
+resolver = "2"
