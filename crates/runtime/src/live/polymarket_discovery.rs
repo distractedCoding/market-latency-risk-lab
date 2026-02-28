@@ -23,14 +23,28 @@ mod tests {
     fn discovery_filters_market_candidates() {
         let markets = vec![sample_market("btc-up-down"), sample_market("sports-final")];
         let out = filter_markets(markets, "btc");
-        assert_eq!(out.len(), 1);
+        assert_eq!(out, vec![sample_market("btc-up-down")]);
     }
 
     #[test]
     fn discovery_is_case_insensitive() {
         let markets = vec![sample_market("BTC-up-down"), sample_market("sports-final")];
         let out = filter_markets(markets, "btc");
-        assert_eq!(out.len(), 1);
+        assert_eq!(out, vec![sample_market("BTC-up-down")]);
+    }
+
+    #[test]
+    fn discovery_trims_query() {
+        let markets = vec![sample_market("btc-up-down"), sample_market("sports-final")];
+        let out = filter_markets(markets, "  btc  ");
+        assert_eq!(out, vec![sample_market("btc-up-down")]);
+    }
+
+    #[test]
+    fn discovery_whitespace_only_query_returns_all_markets() {
+        let markets = vec![sample_market("btc-up-down"), sample_market("sports-final")];
+        let out = filter_markets(markets.clone(), "   ");
+        assert_eq!(out, markets);
     }
 
     fn sample_market(slug: &str) -> PolymarketMarket {
