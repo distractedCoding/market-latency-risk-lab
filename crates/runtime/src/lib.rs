@@ -4,6 +4,7 @@ pub mod events;
 pub mod live;
 pub mod logging;
 pub mod metrics;
+pub mod paper_exec;
 pub mod replay;
 pub mod supervisor;
 
