@@ -12,10 +12,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88.0
         with:
-          components: rustfmt
-      - name: Format check
-        run: cargo fmt --all -- --check
-      - name: Workspace tests
-        run: cargo test --workspace -q
+          components: rustfmt, clippy
+      - name: Rust Workspace Verify
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace -- -D warnings
+          cargo test --workspace
+      - name: Runtime Benchmark Check
+        run: cargo bench -p runtime --no-fail-fast
       - name: Lab server smoke check
         run: cargo check -p lab-server -q
